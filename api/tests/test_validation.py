@@ -282,3 +282,13 @@ async def test_image_total_bytes_counts_only_built_images(monkeypatch):
     }}
     assert await worker.image_total_bytes(spec) == 1048576
     assert "nginx:1.27" not in calls
+
+
+def test_redis_acl_key_patterns_not_reset_afterwards():
+    from app.services.provision import redis_acl_args
+
+    args = redis_acl_args("stu_1411", "pw")
+    key_at = args.index("~stu_1411:*")
+    chan_at = args.index("&stu_1411:*")
+    assert all(a not in ("resetkeys", "resetchannels", "reset") for a in args[key_at:])
+    assert args.index("reset") < min(key_at, chan_at)

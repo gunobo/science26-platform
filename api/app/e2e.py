@@ -166,9 +166,12 @@ class E2E:
         post = await self.web.post(self.page + "api/messages", json={"name": "e2e", "text": "안녕"})
         msgs = (await self.web.get(self.page + "api/messages")).json()
         record("DB 쓰기·읽기", post.status_code == 201 and any(m["text"] == "안녕" for m in msgs))
-        v1 = (await self.web.post(self.page + "api/visits")).json()["visits"]
-        v2 = (await self.web.post(self.page + "api/visits")).json()["visits"]
-        record("Redis 쓰기 (키 접두사)", v2 == v1 + 1, f"{v1} → {v2}")
+        r1 = (await self.web.post(self.page + "api/visits")).json()
+        r2 = (await self.web.post(self.page + "api/visits")).json()
+        if "visits" in r1 and "visits" in r2:
+            record("Redis 쓰기 (키 접두사)", r2["visits"] == r1["visits"] + 1, f"{r1['visits']} → {r2['visits']}")
+        else:
+            record("Redis 쓰기 (키 접두사)", False, str(r2)[:200])
         return True
 
     async def stop_start(self) -> None:
@@ -255,11 +258,15 @@ async def main() -> int:
                     record("앱", False, f"{args.apk} 없음")
             else:
                 print("SKIP  앱 (--apk 로 APK 경로를 주면 테스트)")
-            if not args.keep:
-                await t.delete_project()
     except Exception as e:
         record("예상 못 한 오류", False, f"{type(e).__name__}: {e}")
     finally:
+        # 중간에 실패해도 스택·DB 를 남기지 않는다 (계정을 먼저 지우면 주인 없는 스택이 남음)
+        if not args.keep:
+            try:
+                await t.delete_project()
+            except Exception as e:
+                record("프로젝트 삭제", False, f"{type(e).__name__}: {e}")
         await t.close()
         if not args.keep:
             await teardown_user(sid)

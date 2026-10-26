@@ -82,12 +82,18 @@ def _redis_admin() -> Redis:
     return Redis.from_url(get_settings().student_redis_admin_url, decode_responses=True)
 
 
+# 주의: 키·채널 패턴을 넣은 뒤에 resetkeys/resetchannels 가 오면 패턴이 지워진다.
+# 맨 앞의 reset 이 이미 모두 초기화하므로 여기에는 넣지 않는다.
 REDIS_RULES = [
-    "resetkeys", "resetchannels", "-@all",
+    "-@all",
     "+@read", "+@write", "+@keyspace", "+@string", "+@hash", "+@list", "+@set",
     "+@sortedset", "+@stream", "+@pubsub", "+@transaction", "+@connection", "+@scripting",
     "-@dangerous", "-keys", "-scan", "-flushall", "-flushdb", "-config", "-select", "-swapdb",
 ]
+
+
+def redis_acl_args(user: str, password: str) -> list[str]:
+    return ["ACL", "SETUSER", user, "reset", "on", f">{password}", f"~{user}:*", f"&{user}:*", *REDIS_RULES]
 
 
 async def ensure_redis(student_no: str) -> str:
@@ -95,10 +101,7 @@ async def ensure_redis(student_no: str) -> str:
     password = derived_password("redis", student_no)
     r = _redis_admin()
     try:
-        await r.execute_command(
-            "ACL", "SETUSER", user, "reset", "on", f">{password}",
-            f"~{user}:*", f"&{user}:*", *REDIS_RULES,
-        )
+        await r.execute_command(*redis_acl_args(user, password))
         await r.execute_command("ACL", "SAVE")
     finally:
         await r.aclose()
