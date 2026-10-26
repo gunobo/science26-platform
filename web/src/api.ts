@@ -19,6 +19,8 @@ export class ApiError extends Error {
 export async function api<T = any>(path: string, init: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = { ...(init.headers as Record<string, string>) };
   if (init.body && !(init.body instanceof FormData)) headers['Content-Type'] = 'application/json';
+  // 서버의 CSRF 검사용. 다른 출처(학생 페이지)는 이 헤더를 붙이면 CORS 사전 요청에서 막힌다.
+  if (init.method && init.method !== 'GET') headers['X-S26-Request'] = '1';
   const res = await fetch(API_BASE + path, {
     ...init,
     headers,

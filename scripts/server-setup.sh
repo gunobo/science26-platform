@@ -25,6 +25,11 @@ if ! command -v docker >/dev/null; then
   apt-get update -y
   apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 fi
+# 기본 로그 크기 제한 (compose 에서 따로 지정하지 않은 컨테이너, BuildKit 컨테이너 등)
+if [ ! -f /etc/docker/daemon.json ]; then
+  mkdir -p /etc/docker
+  echo '{"log-driver":"json-file","log-opts":{"max-size":"10m","max-file":"3"}}' > /etc/docker/daemon.json
+fi
 systemctl enable --now docker
 
 echo "== /data 볼륨"

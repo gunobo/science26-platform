@@ -29,7 +29,10 @@ class Settings(BaseSettings):
     student_pg_host: str = "postgres"
     student_redis_host: str = "redis"
     postgres_container: str = "s26-postgres"
-    redis_container: str = "s26-redis"
+    # 학생 Redis 는 플랫폼 Redis 와 분리된 인스턴스 (s26-redis 는 예전 버전에서 학생 네트워크에 붙어 있었음)
+    redis_container: str = "s26-redis-students"
+    legacy_redis_container: str = "s26-redis"
+    student_redis_admin_url: str = "redis://localhost:6380/0"
     traefik_url: str = "http://s26-traefik:8000"  # internal 엔트리포인트
     traefik_metrics_url: str = "http://s26-traefik:8082/metrics"
     edge_network: str = "s26-edge"
@@ -48,6 +51,8 @@ class Settings(BaseSettings):
     releases_kept: int = 5
     concurrent_builds: int = 2
     student_db_alert_bytes: int = 500 * 1024 * 1024
+    # 이 용량을 넘으면 학생 DB 접속을 막는다 (Postgres 에는 DB별 용량 제한이 없어서)
+    student_db_limit_bytes: int = 1024 * 1024 * 1024
 
     @property
     def admin_email_set(self) -> set[str]:

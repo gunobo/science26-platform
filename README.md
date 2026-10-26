@@ -65,6 +65,10 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 ## 명세서와 다른 점
 
+- **학생 Redis 분리**: 명세의 공용 Redis 대신 학생 전용 인스턴스(`redis-students`, 512MB)를 둔다. 학생이 메모리를 채워도 세션·빌드 큐가 멈추지 않게
+- **학생 DB 용량 차단**: 500MB 경고, 1GB 를 넘으면 접속 차단 (Postgres 에는 DB별 용량 제한이 없어서). 관리자가 정리해 한도 아래로 내려가면 자동 해제
+- **네트워크**: 대시보드·API 는 `s26-front` 에만 있고, 학생 공개 서비스가 있는 `s26-edge` 에는 Traefik 만 붙는다
+
 - **외부 인입**: Cloudflare Tunnel 대신 NCP 공인 IP + Traefik Let's Encrypt(HTTP-01). 헬스체크는 외부에 안 열린 `internal` 엔트리포인트(8000)로 한다
 
 - **링크 이름(slug)**: 학번 대신 학생이 정한 이름으로 링크가 열린다 (`/students/space-runner/`). 기본값은 학번, 바꾸면 자동 재배포, 학번 주소로 들어오면 새 주소로 리다이렉트. 컨테이너·DB 계정 등 내부 식별자는 계속 학번
@@ -74,6 +78,16 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 - **라우터 우선순위**: 배포마다 증가하는 순번을 Traefik 우선순위로 써서, 롤백으로 옛 버전을 띄워도 새로 띄운 스택이 트래픽을 받는다
 - **APK 서명 검사**: v1(META-INF 서명 파일) 또는 v2+(APK Signing Block) 존재 여부만 확인. 서명의 암호학적 유효성까지는 검증하지 않음
 - **BuildKit 캐시**: 학생별 분리는 아직 안 함 (기본 빌더 캐시 공유)
+
+## 보안 메모
+
+- 학생 페이지(`science26.bssm.dev`)와 대시보드(`science26-upload.bssm.dev`)는 출처는 다르지만 **같은 사이트**라 SameSite 쿠키가 실린다.
+  그래서 API 는 상태를 바꾸는 요청에 `X-S26-Request` 헤더와 같은 출처(`Origin`, `Sec-Fetch-Site`)를 요구한다 (`api/app/middleware.py`)
+- 업로드는 본문을 받기 전에 세션과 크기를 확인한다 (FastAPI 는 multipart 본문을 인증보다 먼저 읽는다)
+- 대시보드·API 응답에는 `X-Frame-Options: DENY`, `frame-ancestors 'none'`, `nosniff`, HSTS 를 붙인다
+- `scripts/firewall.sh`: 컨테이너 → VPC 내부 대역 차단, 컨테이너 → 호스트 SSH 차단
+- 학생 compose 의 `${...}` 치환은 막혀 있고, docker·git 은 비밀값이 없는 환경에서 실행한다
+- 학생 라벨은 `science26.*` 만 허용, 학생 컨테이너 로그는 5MB × 2
 
 ## 개발
 

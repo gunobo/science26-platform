@@ -29,4 +29,16 @@ for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16; do
 done
 iptables -A "$CHAIN" -j RETURN
 
+# 컨테이너 → 서버 자신(도커 브리지 게이트웨이)으로 들어오는 SSH 차단.
+# 위 규칙은 서버 밖으로 나가는 트래픽만 다루고, ACG 도 서버 내부 트래픽에는 적용되지 않는다.
+IN_CHAIN=S26-HOST-IN
+iptables -N "$IN_CHAIN" 2>/dev/null || iptables -F "$IN_CHAIN"
+for ifc in docker0 br+; do
+  iptables -C INPUT -i "$ifc" -j "$IN_CHAIN" 2>/dev/null || iptables -I INPUT -i "$ifc" -j "$IN_CHAIN"
+done
+iptables -A "$IN_CHAIN" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
+iptables -A "$IN_CHAIN" -p tcp --dport 22 -j DROP
+iptables -A "$IN_CHAIN" -j RETURN
+
 echo "DNS 허용: ${NAMESERVERS:-없음}"
+echo "컨테이너 → 호스트 SSH 차단 적용"

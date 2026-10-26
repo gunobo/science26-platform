@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -152,6 +153,29 @@ async def _create_release(
     return release
 
 
+def _process_upload(file: UploadFile, rtype: ProjectType, rdir: Path) -> tuple[SourceKind, str, list[dict]]:
+    s = get_settings()
+    name = (file.filename or "").lower()
+    limit = s.max_static_bytes if rtype == ProjectType.static else s.max_fullstack_bytes
+    warnings: list[dict] = []
+    if name.endswith(".html") and rtype == ProjectType.static:
+        dest = rdir / "src" / "index.html"
+        dest.parent.mkdir()
+        _save(file, dest, limit)
+        return SourceKind.html, str(dest), v.static_warnings(dest.parent)
+    if name.endswith(".zip"):
+        dest = rdir / "source.zip"
+        _save(file, dest, limit)
+        v.safe_extract(dest, rdir / "src", s.max_unpacked_bytes)
+        if rtype == ProjectType.static:
+            warnings = v.static_warnings(v.find_root(rdir / "src", "index.html"))
+        else:
+            root = v.find_root(rdir / "src", "docker-compose.yml")
+            v.parse_compose((root / "docker-compose.yml").read_text(), root)
+        return SourceKind.zip, str(dest), warnings
+    raise upload_invalid("zip 파일(정적은 index.html도 가능)을 올려주세요")
+
+
 @router.post("/releases", status_code=202)
 async def upload_release(
     type: ProjectType = Form(...),
@@ -179,27 +203,8 @@ async def upload_release(
             v.check_repo(repo_url.strip(), branch.strip())
             kind, ref = SourceKind.git, f"{repo_url.strip()}@{branch.strip()}"
         elif file is not None and file.filename:
-            name = file.filename.lower()
-            limit = s.max_static_bytes if type == ProjectType.static else s.max_fullstack_bytes
-            if name.endswith(".html") and type == ProjectType.static:
-                dest = rdir / "src" / "index.html"
-                dest.parent.mkdir()
-                _save(file, dest, limit)
-                warnings = v.static_warnings(dest.parent)
-                kind = SourceKind.html
-            elif name.endswith(".zip"):
-                dest = rdir / "source.zip"
-                _save(file, dest, limit)
-                v.safe_extract(dest, rdir / "src", s.max_unpacked_bytes)
-                if type == ProjectType.static:
-                    warnings = v.static_warnings(v.find_root(rdir / "src", "index.html"))
-                else:
-                    root = v.find_root(rdir / "src", "docker-compose.yml")
-                    v.parse_compose((root / "docker-compose.yml").read_text(), root)
-                kind = SourceKind.zip
-            else:
-                raise upload_invalid("zip 파일(정적은 index.html도 가능)을 올려주세요")
-            ref = str(dest)
+            # 저장·압축 해제·검사는 수백 MB 까지 걸리는 동기 작업이라 스레드에서 돌린다 (다른 요청이 멈추지 않게)
+            kind, ref, warnings = await run_in_threadpool(_process_upload, file, type, rdir)
         else:
             raise upload_invalid("파일 또는 GitHub 저장소 주소가 필요합니다")
 
@@ -238,8 +243,8 @@ async def upload_app(
         if not (apk.filename or "").lower().endswith(".apk"):
             raise upload_invalid("APK 파일을 올려주세요")
         apk_path = rdir / "app.apk"
-        _save(apk, apk_path, s.max_apk_bytes)
-        info = v.inspect_apk(apk_path)
+        await run_in_threadpool(_save, apk, apk_path, s.max_apk_bytes)
+        info = await run_in_threadpool(v.inspect_apk, apk_path)
         for i, shot in enumerate(screenshots):
             data = await shot.read()
             v.check_image(shot.filename or "", len(data), s.max_image_bytes)

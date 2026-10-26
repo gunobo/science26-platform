@@ -91,6 +91,27 @@ async def connect_network(network: str, container: str, alias: str) -> None:
             raise
 
 
+async def disconnect_network(network: str, container: str) -> None:
+    try:
+        await run("docker", "network", "disconnect", "-f", network, container)
+    except CommandError:
+        pass
+
+
+async def list_networks(prefix: str) -> list[str]:
+    out = await run("docker", "network", "ls", "--filter", f"name={prefix}", "--format", "{{.Name}}")
+    return [n for n in out.split() if n.startswith(prefix)]
+
+
+async def prune_build_cache() -> None:
+    """3일 지난 빌드 캐시와 이름 없는 이미지를 지운다."""
+    for args in (("docker", "buildx", "prune", "-f", "--filter", "until=72h"), ("docker", "image", "prune", "-f")):
+        try:
+            await run(*args, timeout=600)
+        except CommandError:
+            pass
+
+
 async def remove_network(network: str) -> None:
     try:
         await run("docker", "network", "rm", network)

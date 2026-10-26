@@ -5,4 +5,4 @@ ACL=/data/users.acl
 if [ ! -f "$ACL" ]; then
   echo "user default on >${REDIS_PASSWORD} ~* &* +@all" > "$ACL"
 fi
-exec redis-server --appendonly yes --aclfile "$ACL" --maxmemory 1gb --maxmemory-policy noeviction
+exec redis-server --appendonly yes --aclfile "$ACL" --maxmemory "${REDIS_MAXMEMORY:-1gb}" --maxmemory-policy noeviction

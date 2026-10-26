@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.errors import APIError, api_error_handler
+from app.middleware import SecurityGuard
 from app.routers import admin, auth, me, projects, public
 
 app = FastAPI(title="science26", docs_url="/api/docs", openapi_url="/api/openapi.json")
@@ -17,6 +18,8 @@ app.add_middleware(
     allow_credentials=False,
 )
 app.add_exception_handler(APIError, api_error_handler)
+# CSRF·업로드 크기·비로그인 업로드를 본문 파싱 전에 거른다 (가장 바깥에서 실행)
+app.add_middleware(SecurityGuard)
 
 
 @app.exception_handler(RequestValidationError)

@@ -97,6 +97,8 @@ def hardening(memory_mb: int, cpus: float, pids: int) -> dict:
         "read_only": True,
         "tmpfs": ["/tmp:size=64m"],
         "restart": "on-failure:3",
+        # 학생 앱이 로그를 무한히 찍어도 디스크가 차지 않게
+        "logging": {"driver": "json-file", "options": {"max-size": "5m", "max-file": "2"}},
     }
 
 
@@ -151,7 +153,8 @@ def rewrite(
             ]
         out["environment"] = {**_env_list(svc.get("environment")), **env}
 
-        labels = {k: v for k, v in _labels(svc).items() if not k.startswith("traefik.")}
+        # 학생 라벨은 science26.* 만 받는다 (traefik.*, com.docker.compose.* 등으로 라우팅·관리 혼란 방지)
+        labels = {k: v for k, v in _labels(svc).items() if k.startswith("science26.")}
         labels["science26.student"] = student_no
         labels["science26.version"] = str(version)
         networks = ["default"]

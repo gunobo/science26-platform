@@ -124,7 +124,7 @@ async def compose_for(db, project: Project, release: Release, root: Path, seq: i
     await emit("학생 DB·Redis 계정 확인")
     env = {
         **await student_env(db, project),
-        "DATABASE_URL": await provision.ensure_postgres(project.student_no),
+        "DATABASE_URL": await _student_db_url(project.student_no),
         "REDIS_URL": await provision.ensure_redis(project.student_no),
         "REDIS_KEY_PREFIX": f"stu_{project.student_no}:",
         "BASE_PATH": base_path(project.slug),
@@ -136,6 +136,14 @@ async def compose_for(db, project: Project, release: Release, root: Path, seq: i
     )
 
 
+async def _student_db_url(student_no: str) -> str:
+    url = await provision.ensure_postgres(student_no)
+    # ensure_postgres 가 접속 한도를 10 으로 되돌리므로, 용량 초과로 막힌 학생은 다시 막는다
+    if await redis.exists(f"dbblocked:{student_no}"):
+        await provision.set_db_blocked(student_no, True)
+    return url
+
+
 async def ensure_student_network(student_no: str) -> None:
     net = network_name(student_no)
     try:
@@ -144,6 +152,25 @@ async def ensure_student_network(student_no: str) -> None:
         await d.run("docker", "network", "create", net)
     await d.connect_network(net, s.postgres_container, "postgres")
     await d.connect_network(net, s.redis_container, "redis")
+    # 예전 버전은 플랫폼 Redis 를 학생 네트워크에 붙였다. 같은 별칭이 둘이면 안 되니 떼어 낸다.
+    await d.disconnect_network(net, s.legacy_redis_container)
+
+
+async def migrate_student_redis() -> None:
+    """이미 떠 있는 학생 스택을 학생 전용 Redis 로 옮긴다 (ACL 계정 발급 후 네트워크 별칭 교체).
+
+    플랫폼 Redis 에 있던 학생 데이터는 옮기지 않는다 (학생 Redis 는 캐시 용도로 안내한다).
+    """
+    for net in await d.list_networks("stu-"):
+        m = re.fullmatch(r"stu-(\d{4})-net", net)
+        if not m:
+            continue
+        try:
+            await provision.ensure_redis(m.group(1))
+            await d.connect_network(net, s.redis_container, "redis")
+            await d.disconnect_network(net, s.legacy_redis_container)
+        except Exception:
+            log.exception("학생 Redis 이전 실패 %s", net)
 
 
 async def image_total_bytes(compose_file: Path, project: str) -> int:
@@ -367,6 +394,10 @@ async def _delete_project(student_no: str) -> None:
 
 # ---- 주기 작업 ----
 
+async def prune_build_cache(ctx) -> None:
+    await d.prune_build_cache()
+
+
 _ROUTER_RE = re.compile(r'^traefik_router_requests_total\{[^}]*router="stu-(\d{4})-v\d+(?:-api)?@docker"[^}]*\}\s+([0-9.e+]+)', re.M)
 
 
@@ -452,7 +483,21 @@ async def collect_stats(ctx) -> None:
     for no, size in sizes.items():
         agg.setdefault(no, {"cpu_percent": 0.0, "mem_bytes": 0.0, "containers": 0})["db_bytes"] = size
         if size > s.student_db_alert_bytes and await redis.set(f"alerted:db:{no}", "1", nx=True, ex=86400):
-            await notify(f"{no} 학생 DB가 {size // 1024 // 1024}MB 입니다 (한도 500MB)")
+            await notify(f"{no} 학생 DB가 {size // 1024 // 1024}MB 입니다 (경고 500MB, 차단 {s.student_db_limit_bytes // 1024 // 1024}MB)")
+        # Postgres 에는 DB별 용량 제한이 없어서, 한도를 넘으면 접속을 막아 더 쓰지 못하게 한다.
+        # 막힌 동안 학생은 지울 수 없으니, 관리자가 정리해서 한도 아래로 내려가면 자동으로 풀린다.
+        blocked = await redis.exists(f"dbblocked:{no}")
+        try:
+            if size > s.student_db_limit_bytes and not blocked:
+                await provision.set_db_blocked(no, True)
+                await redis.set(f"dbblocked:{no}", "1")
+                await notify(f"{no} 학생 DB가 {size // 1024 // 1024}MB 로 한도를 넘어 접속을 막았어요")
+            elif blocked and size <= s.student_db_limit_bytes:
+                await provision.set_db_blocked(no, False)
+                await redis.delete(f"dbblocked:{no}")
+                await notify(f"{no} 학생 DB 용량이 한도 아래로 내려가 접속을 다시 열었어요")
+        except Exception:
+            log.exception("DB 용량 제한 적용 실패 %s", no)
     for no, a in agg.items():
         await redis.set(f"stats:{no}", json.dumps({**a, "at": now().isoformat()}), ex=600)
 
@@ -507,6 +552,7 @@ async def startup(ctx) -> None:
     ctx["build_sem"] = asyncio.Semaphore(s.concurrent_builds)
     s.releases_dir.mkdir(parents=True, exist_ok=True)
     await recover_interrupted()
+    await migrate_student_redis()
     # 서버 재부팅 뒤 on-failure 컨테이너는 자동으로 안 뜨므로 running 프로젝트를 다시 켠다.
     async with SessionLocal() as db:
         nos = [
@@ -526,6 +572,7 @@ class WorkerSettings:
         cron(track_requests, second={0, 30}),
         cron(sleep_idle, minute=set(range(0, 60, 2)), second=15),
         cron(collect_stats, minute=set(range(0, 60, 2)), second=45),
+        cron(prune_build_cache, hour=4, minute=30),
     ]
     on_startup = startup
     redis_settings = redis_settings()

@@ -46,7 +46,12 @@ async def thumbnail(student_no: str, db: AsyncSession = Depends(get_db)):
     project = (await db.execute(select(Project).where(Project.student_no == student_no))).scalar_one_or_none()
     if project is None or not project.thumbnail_path or not Path(project.thumbnail_path).is_file():
         raise not_found()
-    return FileResponse(project.thumbnail_path, headers={"Cache-Control": "public, max-age=300"})
+    # 학생이 올린 파일을 대시보드와 같은 출처에서 내보내므로 내용 추측·스크립트 실행을 막는다
+    return FileResponse(project.thumbnail_path, headers={
+        "Cache-Control": "public, max-age=300",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "default-src 'none'; sandbox",
+    })
 
 
 def _page(title: str, body: str, refresh: int | None = None, status: int = 200) -> HTMLResponse:

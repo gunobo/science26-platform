@@ -85,6 +85,8 @@
 - `DATABASE_URL` 은 `postgresql://` 형식이야. SQLAlchemy async 는 `postgresql+asyncpg://` 로 바꿔서 쓰고, Prisma·node-postgres·psycopg 는 그대로 쓰면 돼
 - 테이블은 앱이 시작할 때 만들거나 마이그레이션을 돌려. DB 는 처음엔 비어 있어
 - Redis 에서 `KEYS`, `SCAN`, `FLUSHALL`, `FLUSHDB`, `CONFIG`, `SELECT` 는 막혀 있어. 키는 항상 `REDIS_KEY_PREFIX` 로 시작해야 하고, 0번 DB 만 써
+- Redis 는 모든 학생이 512MB 를 나눠 쓰는 **캐시**야. 사라지면 안 되는 데이터는 PostgreSQL 에 저장하고, Redis 키에는 TTL 을 걸어
+- PostgreSQL 은 학생당 1GB 를 넘으면 접속이 막혀. 파일·이미지 같은 큰 데이터를 DB 에 넣지 마
 
 ### 실행 환경 (지켜야 동작함)
 - 파일시스템이 **읽기 전용**이야. 쓰기 가능한 곳은 `/tmp` (64MB, 재시작하면 사라짐) 뿐
@@ -95,6 +97,7 @@
 - 개발 서버(`vite dev`, `next dev`, `nodemon`, `flask run --debug`) 말고 프로덕션 빌드·서버로 실행
 - 빌드 10분 제한, 이미지 합계 2GB, 소스 200MB
 - `0.0.0.0` 에 바인딩 (localhost 만 열면 접속 안 됨)
+- 컨테이너 로그는 5MB 씩 2개까지만 남아. 로그를 너무 많이 찍지 마
 - 30분 동안 방문이 없으면 잠들었다가 첫 방문 때 다시 켜져. 시작이 빠를수록 좋아
 - 배포 확인: 플랫폼이 공개 서비스의 `/` 에 GET 을 보내서 **60초 안에 2xx 또는 3xx** 가 와야 성공
 

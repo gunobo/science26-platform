@@ -53,6 +53,20 @@ async def drop_postgres(student_no: str) -> None:
         await conn.close()
 
 
+async def set_db_blocked(student_no: str, blocked: bool) -> None:
+    """용량 초과 시 접속을 막고 기존 접속을 끊는다. 다시 줄면 원래 한도(10)로 되돌린다."""
+    role = pg_role(student_no)
+    conn = await asyncpg.connect(_pg_dsn())
+    try:
+        await conn.execute(f"ALTER ROLE {role} CONNECTION LIMIT {0 if blocked else 10}")
+        if blocked:
+            await conn.execute(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = $1", role
+            )
+    finally:
+        await conn.close()
+
+
 async def database_sizes() -> dict[str, int]:
     conn = await asyncpg.connect(_pg_dsn())
     try:
@@ -65,7 +79,7 @@ async def database_sizes() -> dict[str, int]:
 
 
 def _redis_admin() -> Redis:
-    return Redis.from_url(get_settings().redis_url, decode_responses=True)
+    return Redis.from_url(get_settings().student_redis_admin_url, decode_responses=True)
 
 
 REDIS_RULES = [
