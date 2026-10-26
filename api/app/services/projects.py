@@ -65,6 +65,7 @@ def project_out(p: Project, active: Release | None = None, latest: Release | Non
         "title": p.title,
         "description": p.description,
         "thumbnail_url": thumbnail_url(p),
+        "listed": p.listed,
         "status": p.status.value,
         "url": student_url(p.slug),
         "last_request_at": p.last_request_at.isoformat() if p.last_request_at else None,

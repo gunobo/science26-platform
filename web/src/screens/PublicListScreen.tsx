@@ -131,13 +131,13 @@ function Chip({ label, icon: I, active, onPress }: { label: string; icon?: Icon;
   );
 }
 
-function ProjectCard({ p, width }: { p: PublicCard; width: `${number}%` }) {
+export function ProjectCard({ p, width }: { p: PublicCard; width: `${number}%` }) {
   const t = useTheme();
   const type = TYPES[p.type];
   return (
     <View style={{ width, padding: 10 }}>
       <Pressable
-        onPress={() => Linking.openURL(p.url)}
+        onPress={() => p.url && Linking.openURL(p.url)}
         accessibilityRole="link"
         accessibilityLabel={`${p.title} 열기`}
         style={({ hovered, pressed }: any) => [

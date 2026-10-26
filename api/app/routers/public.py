@@ -21,7 +21,7 @@ async def public_projects(db: AsyncSession = Depends(get_db)):
     rows = await db.execute(
         select(Project, User.name)
         .join(User, User.id == Project.owner_id)
-        .where(Project.active_release_id.is_not(None))
+        .where(Project.active_release_id.is_not(None), Project.listed.is_(True))
         .order_by(Project.student_no)
     )
     out = []

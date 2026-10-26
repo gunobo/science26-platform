@@ -3,7 +3,7 @@ import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Linking, Pressable, ScrollView, Switch, Text, useWindowDimensions, View } from 'react-native';
 import {
   AndroidLogo, ArrowCounterClockwise, ArrowUpRight, Browser, ClockCounterClockwise, Copy, FileZip, GearSix,
-  GithubLogo, Image as ImageIcon, Key, Play, Plus, Robot, Stack, Stop, Terminal, Trash, UploadSimple,
+  GithubLogo, Image as ImageIcon, Key, PencilSimple, Play, Plus, Robot, Stack, Stop, Terminal, Trash, UploadSimple,
 } from '@phosphor-icons/react';
 
 import { API_BASE, api, ApiError, json, Project, ProjectType, PUBLIC_HOST, Release, Warning } from '../api';
@@ -18,7 +18,7 @@ async function pick(types: string[], multiple = false): Promise<File[]> {
   return res.assets.map((a) => a.file).filter((f): f is File => !!f);
 }
 
-export default function DashboardScreen() {
+export default function DashboardScreen({ onEditInfo }: { onEditInfo: () => void }) {
   const { width } = useWindowDimensions();
   const wide = width >= 980;
   const [project, setProject] = useState<Project | null>(null);
@@ -56,7 +56,6 @@ export default function DashboardScreen() {
   );
   const side = (
     <>
-      <SettingsCard project={project} onChange={refresh} />
       <ReleasesCard releases={releases} activeId={project.active_release?.id} busy={busy} onWatch={setWatching} onChange={refresh} />
       {project.type === 'fullstack' && <EnvCard />}
     </>
@@ -64,7 +63,7 @@ export default function DashboardScreen() {
 
   return (
     <View>
-      <Hero project={project} />
+      <Hero project={project} onEditInfo={onEditInfo} />
       {wide ? (
         <View style={{ flexDirection: 'row', gap: 20, alignItems: 'flex-start' }}>
           <View style={{ flex: 1.55, minWidth: 0 }}>{main}</View>
@@ -82,7 +81,7 @@ export default function DashboardScreen() {
 
 // ---- 상단: 내 프로젝트 요약 ----
 
-function Hero({ project }: { project: Project }) {
+function Hero({ project, onEditInfo }: { project: Project; onEditInfo: () => void }) {
   const t = useTheme();
   const live = project.url && project.active_release;
   const [copied, setCopied] = useState(false);
@@ -91,6 +90,8 @@ function Hero({ project }: { project: Project }) {
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <T variant="title">{project.title || '내 프로젝트'}</T>
         <Badge status={project.status} />
+        {!project.listed && project.active_release && <Badge status="empty" label="전시관에서 숨김" />}
+        <Button label="정보 수정" kind="ghost" small icon={PencilSimple} onPress={onEditInfo} />
       </View>
       {live ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -476,7 +477,7 @@ function RuntimeCard({ project, onChange }: { project: Project; onChange: () => 
 
 // ---- 링크 이름·소개 ----
 
-function SettingsCard({ project, onChange }: { project: Project; onChange: () => void }) {
+export function SettingsCard({ project, onChange }: { project: Project; onChange: () => void }) {
   const [title, setTitle] = useState(project.title);
   const [description, setDescription] = useState(project.description);
   const [slug, setSlug] = useState(project.slug);

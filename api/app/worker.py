@@ -340,6 +340,13 @@ async def runtime_logs(ctx, student_no: str, service: str | None) -> str:
 
 
 async def delete_project(ctx, student_no: str) -> None:
+    try:
+        await _delete_project(student_no)
+    finally:
+        await release_project_lock(student_no)
+
+
+async def _delete_project(student_no: str) -> None:
     for p in await d.list_projects(f"stu-{student_no}-v"):
         await d.down_project(p["Name"])
     await d.remove_images(f"s26/stu-{student_no}-*")

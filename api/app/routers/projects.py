@@ -34,7 +34,7 @@ ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 async def my_project(user: User = Depends(mapped_student), db: AsyncSession = Depends(get_db)):
     project = await get_project(db, user.student_no)
     if project is None:
-        return {"student_no": user.student_no, "slug": user.student_no, "status": "empty", "type": None,
+        return {"student_no": user.student_no, "slug": user.student_no, "status": "empty", "type": None, "listed": True,
                 "title": "", "description": "", "thumbnail_url": None, "active_release": None,
                 "latest_release": None, "url": None, "last_request_at": None}
     active = await db.get(Release, project.active_release_id) if project.active_release_id else None
@@ -51,6 +51,7 @@ async def update_project(
     title: str | None = Form(None),
     description: str | None = Form(None),
     slug: str | None = Form(None),
+    listed: bool | None = Form(None),
     thumbnail: UploadFile | None = File(None),
     user: User = Depends(mapped_student),
     db: AsyncSession = Depends(get_db),
@@ -61,6 +62,8 @@ async def update_project(
         project.title = title.strip()[:100]
     if description is not None:
         project.description = description.strip()[:2000]
+    if listed is not None:
+        project.listed = listed
 
     slug_changed = False
     if slug is not None and slug != project.slug:
@@ -92,6 +95,23 @@ async def update_project(
     if slug_changed and project.active_release_id:
         await _queue_redeploy(db, user, project, project.active_release_id, action="slug")
     return {"ok": True, "slug": project.slug, "redeploying": slug_changed and bool(project.active_release_id)}
+
+
+@router.delete("", status_code=202)
+async def delete_my_project(user: User = Depends(mapped_student), db: AsyncSession = Depends(get_db)):
+    """내 프로젝트(스택, DB, 업로드 파일, 배포 기록) 전체 삭제. 마감 후에는 관리자만."""
+    project = await get_project(db, user.student_no)
+    if project is None:
+        raise not_found("삭제할 프로젝트가 없습니다")
+    cfg = await settings_store.load(db)
+    if user.role != Role.admin and cfg.upload_deadline and datetime.now(timezone.utc) > cfg.upload_deadline:
+        raise APIError(403, "DEADLINE_PASSED", "마감 후에는 프로젝트를 삭제할 수 없습니다. 선생님께 문의하세요")
+    # 빌드 중에는 지우지 않는다. 잠금은 워커가 삭제를 마친 뒤 푼다.
+    await acquire_project_lock(user.student_no, "delete")
+    audit(db, user, "self_delete", user.student_no)
+    await db.commit()
+    await enqueue("delete_project", user.student_no)
+    return {"ok": True}
 
 
 # ---- 업로드 ----

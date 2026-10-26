@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, Text, useColorScheme, View } from 'react-native';
-import { Flask, ShieldCheck, SignOut, SquaresFour } from '@phosphor-icons/react';
+import { Flask, ShieldCheck, SignOut, SquaresFour, UserCircle } from '@phosphor-icons/react';
 
 import { api, ApiError, isPublicHost, Me, PUBLIC_HOST } from './api';
 import AdminScreen from './screens/AdminScreen';
 import DashboardScreen from './screens/DashboardScreen';
 import LoginScreen from './screens/LoginScreen';
+import MyPageScreen from './screens/MyPageScreen';
 import PublicListScreen from './screens/PublicListScreen';
 import { dark, font, installWebFont, light, radius, ThemeContext, useTheme } from './theme';
 import { Button, Card, layout, Skeleton, T } from './ui';
@@ -22,7 +23,7 @@ export default function App() {
   );
 }
 
-type Tab = 'project' | 'admin';
+type Tab = 'project' | 'mypage' | 'admin';
 
 function Workspace() {
   const t = useTheme();
@@ -68,12 +69,11 @@ function Workspace() {
             </View>
             <Text style={{ fontFamily: font.family, fontSize: 17, fontWeight: '800', color: t.text, letterSpacing: -0.4 }}>science26</Text>
           </Pressable>
-          {me.role === 'admin' && (
-            <View style={{ flexDirection: 'row', gap: 4 }}>
-              {me.mapped && <TabButton label="내 프로젝트" icon={SquaresFour} active={tab === 'project'} onPress={() => setTab('project')} />}
-              <TabButton label="관리자" icon={ShieldCheck} active={tab === 'admin'} onPress={() => setTab('admin')} />
-            </View>
-          )}
+          <View style={{ flexDirection: 'row', gap: 4 }}>
+            {me.mapped && <TabButton label="내 프로젝트" icon={SquaresFour} active={tab === 'project'} onPress={() => setTab('project')} />}
+            {me.mapped && <TabButton label="마이페이지" icon={UserCircle} active={tab === 'mypage'} onPress={() => setTab('mypage')} />}
+            {me.role === 'admin' && <TabButton label="관리자" icon={ShieldCheck} active={tab === 'admin'} onPress={() => setTab('admin')} />}
+          </View>
           <View style={{ flex: 1 }} />
           <View style={{ alignItems: 'flex-end' }}>
             <T variant="small" style={{ color: t.text, fontWeight: '600' }} numberOfLines={1}>{me.name || me.email}</T>
@@ -92,8 +92,10 @@ function Workspace() {
           </Card>
         ) : tab === 'admin' && me.role === 'admin' ? (
           <AdminScreen />
+        ) : tab === 'mypage' ? (
+          <MyPageScreen me={me} onDeleted={() => setTab('project')} />
         ) : (
-          <DashboardScreen />
+          <DashboardScreen onEditInfo={() => setTab('mypage')} />
         )}
       </ScrollView>
     </View>

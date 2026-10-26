@@ -59,6 +59,7 @@ export type Project = {
   title: string;
   description: string;
   thumbnail_url: string | null;
+  listed: boolean;
   status: ProjectStatus;
   url: string | null;
   last_request_at: string | null;
