@@ -137,10 +137,14 @@ async def put_settings(
 @router.get("/audit-logs")
 async def audit_logs(_: User = Depends(admin_user), db: AsyncSession = Depends(get_db)):
     rows = await db.execute(
-        select(AuditLog, User.email).outerjoin(User, User.id == AuditLog.actor_id)
+        select(AuditLog, User).outerjoin(User, User.id == AuditLog.actor_id)
         .order_by(AuditLog.id.desc()).limit(200)
     )
     return [
-        {"at": log.at.isoformat(), "actor": email, "action": log.action, "target": log.target}
-        for log, email in rows
+        {
+            "at": log.at.isoformat(), "action": log.action, "target": log.target, "detail": log.detail,
+            "actor": u.email if u else None, "actor_name": u.name if u else None,
+            "actor_student_no": u.student_no if u else None,
+        }
+        for log, u in rows
     ]

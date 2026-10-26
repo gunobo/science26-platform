@@ -16,6 +16,7 @@ from sqlalchemy import select
 from app import settings_store
 from app.config import get_settings
 from app.db import SessionLocal
+from app.notify import send as send_discord
 from app.models import EnvVar, Project, ProjectStatus, ProjectType, Release, ReleaseState, SourceKind
 from app.queue import redis_settings, release_project_lock
 from app.redis_client import redis
@@ -42,13 +43,13 @@ def now() -> datetime:
 
 
 async def notify(message: str) -> None:
-    if not s.discord_webhook_url:
-        return
-    try:
-        async with httpx.AsyncClient(timeout=10) as c:
-            await c.post(s.discord_webhook_url, json={"content": f"[science26] {message}"[:1900]})
-    except Exception:
-        log.exception("discord 알림 실패")
+    """장애 알림 (멘션 없음)."""
+    await send_discord(message)
+
+
+async def send_notification(ctx, message: str, mention: bool = False) -> None:
+    """API 가 넣는 활동 알림 잡."""
+    await send_discord(message, mention=mention)
 
 
 # ---- 소스 준비 (validating) ----
@@ -600,7 +601,7 @@ async def startup(ctx) -> None:
 
 
 class WorkerSettings:
-    functions = [build_release, deploy_existing, stop_project, start_project, runtime_logs, delete_project]
+    functions = [build_release, deploy_existing, stop_project, start_project, runtime_logs, delete_project, send_notification]
     cron_jobs = [
         cron(track_requests, second={0, 30}),
         cron(sleep_idle, minute=set(range(0, 60, 2)), second=15),

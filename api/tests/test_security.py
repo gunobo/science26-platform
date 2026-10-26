@@ -129,3 +129,29 @@ def test_traefik_dynamic_file_strips_service_worker_allowed():
     conf = yaml.safe_load((Path(__file__).parents[2] / "infra/traefik/dynamic/students.yml").read_text())
     hdr = conf["http"]["middlewares"]["student-response-headers"]["headers"]["customResponseHeaders"]
     assert hdr == {"Service-Worker-Allowed": ""}
+
+
+def test_discord_mentions_only_configured_users(monkeypatch):
+    import asyncio
+
+    from app import notify
+
+    sent = {}
+
+    class FakeClient:
+        def __init__(self, *a, **k): ...
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): ...
+        async def post(self, url, json): sent.update(json)
+
+    s = get_settings()
+    monkeypatch.setattr(s, "discord_webhook_url", "https://discord.example/hook")
+    monkeypatch.setattr(s, "discord_mention_user_ids", "945179735003127851, x")
+    monkeypatch.setattr(notify.httpx, "AsyncClient", FakeClient)
+
+    asyncio.run(notify.send("프로젝트 등록: @everyone 학생", mention=True))
+    assert sent["content"].startswith("<@945179735003127851> [science26]")
+    assert sent["allowed_mentions"] == {"parse": [], "users": ["945179735003127851"]}
+
+    asyncio.run(notify.send("디스크 경고"))
+    assert sent["allowed_mentions"] == {"parse": [], "users": []} and "<@" not in sent["content"]

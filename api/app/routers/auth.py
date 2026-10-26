@@ -8,13 +8,14 @@ import httpx
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.db import get_db
 from app.errors import APIError, forbidden
 from app.models import Role, User
+from app.notify import activity
 from app.redis_client import redis
 from app.security import LEGACY_SESSION_COOKIE, SESSION_COOKIE, create_session, delete_session, ip_rate_limit
 
@@ -61,7 +62,12 @@ async def _login_as(db: AsyncSession, email: str, name: str) -> User:
     if not user.name:
         user.name = name
     user.role = Role.admin if email in s.admin_email_set else Role.student
+    if user.last_login_at is None:
+        await db.flush()  # id 가 있어야 기록할 수 있다
+        await activity(db, user, "first_login", "첫 접속", target=user.student_no or "", detail=email)
+    user.last_login_at = func.now()
     await db.commit()
+    await db.refresh(user)
     return user
 
 

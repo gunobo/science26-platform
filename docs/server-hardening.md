@@ -88,6 +88,16 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d worker
 docker exec s26-worker python -c "import asyncio; from app.worker import notify; asyncio.run(notify('알림 테스트'))"
 ```
 
+### 활동 알림 (멘션)
+
+첫 접속, 프로젝트 등록, 새 버전 업로드, 정보 수정(같은 학생은 10분에 한 번), 프로젝트 삭제 때는 지정한 사람을 멘션한다.
+같은 내용이 관리자 화면 "최근 활동"에도 보인다.
+디스코드 사용자 ID 는 디스코드 설정 → 고급 → 개발자 모드를 켠 뒤 프로필 우클릭 → "사용자 ID 복사".
+
+```
+DISCORD_MENTION_USER_IDS=123456789012345678
+```
+
 ## 6. 외부 상태 감시
 
 서버가 통째로 죽으면 서버 안의 알림도 같이 멈춘다. 바깥에서 주기적으로 확인하는 무료 서비스(UptimeRobot, Better Stack 등)에 HTTP 감시를 건다.

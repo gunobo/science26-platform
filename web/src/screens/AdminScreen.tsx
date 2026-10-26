@@ -1,11 +1,14 @@
 import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Linking, Pressable, Text, TextInput, useWindowDimensions, View } from 'react-native';
-import { ArrowsClockwise, ClipboardText, FileCsv, MagnifyingGlass, Sliders, Stop, Trash, UsersThree } from '@phosphor-icons/react';
+import {
+  ArrowCounterClockwise, ArrowsClockwise, Bell, ClipboardText, FileCsv, Key, MagnifyingGlass, PencilSimple, Play, SignIn,
+  Sliders, Sparkle, Stop, Trash, UploadSimple, UsersThree,
+} from '@phosphor-icons/react';
 
 import { api, json, Project } from '../api';
 import { font, radius, useTheme } from '../theme';
-import { Badge, Button, Card, Field, FilePick, Notice, Skeleton, T } from '../ui';
+import { Badge, Button, Card, Field, FilePick, Icon, Notice, Segmented, Skeleton, T } from '../ui';
 
 type AdminProject = Project & {
   owner: { email: string; name: string };
@@ -21,10 +24,10 @@ export default function AdminScreen() {
   return (
     <View>
       <ProjectsCard />
+      <ActivityCard />
       <View style={{ flexDirection: wide ? 'row' : 'column', gap: wide ? 20 : 0, alignItems: 'flex-start' }}>
         <View style={{ flex: 1, minWidth: 0, width: wide ? undefined : '100%' }}>
           <ImportCard />
-          <AuditCard />
         </View>
         <View style={{ flex: 1, minWidth: 0, width: wide ? undefined : '100%' }}>
           <SettingsCard />
@@ -213,28 +216,114 @@ function SettingsCard() {
   );
 }
 
-function AuditCard() {
-  const [rows, setRows] = useState<{ at: string; actor: string | null; action: string; target: string }[]>([]);
-  const [open, setOpen] = useState(false);
+type Activity = {
+  at: string;
+  action: string;
+  target: string;
+  detail: string;
+  actor: string | null;
+  actor_name: string | null;
+  actor_student_no: string | null;
+};
+
+type Kind = 'all' | 'login' | 'project' | 'admin';
+const ACTIONS: Record<string, { label: string; kind: Exclude<Kind, 'all'>; icon: Icon }> = {
+  first_login: { label: '첫 접속', kind: 'login', icon: SignIn },
+  register: { label: '프로젝트 등록', kind: 'project', icon: Sparkle },
+  upload: { label: '새 버전 업로드', kind: 'project', icon: UploadSimple },
+  update_info: { label: '정보 수정', kind: 'project', icon: PencilSimple },
+  rollback: { label: '롤백', kind: 'project', icon: ArrowCounterClockwise },
+  slug: { label: '링크 이름 변경 재배포', kind: 'project', icon: PencilSimple },
+  env: { label: '환경변수 변경', kind: 'project', icon: Key },
+  stop: { label: '중지', kind: 'project', icon: Stop },
+  start: { label: '다시 시작', kind: 'project', icon: Play },
+  self_delete: { label: '프로젝트 삭제', kind: 'project', icon: Trash },
+  admin_stop: { label: '관리자 중지', kind: 'admin', icon: Stop },
+  delete: { label: '관리자 삭제', kind: 'admin', icon: Trash },
+  import_users: { label: '학번 등록', kind: 'admin', icon: FileCsv },
+  settings: { label: '운영 설정 변경', kind: 'admin', icon: Sliders },
+};
+
+function ago(iso: string) {
+  const sec = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (sec < 60) return '방금';
+  if (sec < 3600) return `${Math.floor(sec / 60)}분 전`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}시간 전`;
+  return new Date(iso).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function ActivityCard() {
+  const t = useTheme();
+  const [rows, setRows] = useState<Activity[] | null>(null);
+  const [kind, setKind] = useState<Kind>('all');
+  const [error, setError] = useState('');
+
+  const load = useCallback(() => {
+    api<Activity[]>('/admin/audit-logs').then((r) => { setRows(r); setError(''); }).catch((e) => setError(e.message));
+  }, []);
   useEffect(() => {
-    if (open) api('/admin/audit-logs').then(setRows);
-  }, [open]);
+    load();
+    const id = setInterval(load, 20000);
+    return () => clearInterval(id);
+  }, [load]);
+
+  const today = new Date().toDateString();
+  const todayCount = (a: string) => rows?.filter((r) => r.action === a && new Date(r.at).toDateString() === today).length ?? 0;
+  const shown = rows?.filter((r) => kind === 'all' || ACTIONS[r.action]?.kind === kind).slice(0, 60);
+
   return (
-    <Card title="활동 기록" icon={ClipboardText} right={<Button label={open ? '접기' : '펼치기'} kind="ghost" small onPress={() => setOpen(!open)} />}>
-      {!open ? (
-        <T variant="sub">업로드, 배포, 삭제 같은 작업이 모두 기록돼요.</T>
-      ) : (
-        <View style={{ gap: 6 }}>
-          {rows.map((r, i) => (
-            <View key={i} style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
-              <T variant="small" style={{ width: 130 }}>{new Date(r.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</T>
-              <T variant="small" style={{ fontWeight: '700' }}>{r.action}</T>
-              <T variant="small">{r.target}</T>
-              <T variant="small" style={{ flex: 1 }} numberOfLines={1}>{r.actor ?? '-'}</T>
+    <Card title="최근 활동" icon={Bell} right={<Button label="새로고침" kind="ghost" small icon={ArrowsClockwise} onPress={load} />}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 28, marginBottom: 16 }}>
+        <Stat label="오늘 첫 접속" value={todayCount('first_login')} />
+        <Stat label="오늘 프로젝트 등록" value={todayCount('register')} />
+        <Stat label="오늘 업로드" value={todayCount('upload')} />
+        <Stat label="오늘 정보 수정" value={todayCount('update_info')} />
+      </View>
+      <Segmented
+        value={kind}
+        onChange={setKind}
+        options={[
+          { value: 'all', label: '전체' },
+          { value: 'login', label: '접속' },
+          { value: 'project', label: '프로젝트' },
+          { value: 'admin', label: '관리자' },
+        ]}
+      />
+      {error ? <Notice kind="error" text={error} /> : null}
+      {!rows && !error && <Skeleton h={160} />}
+      {shown && shown.length === 0 && <T variant="sub">아직 기록이 없어요.</T>}
+      <View style={{ gap: 2 }}>
+        {shown?.map((r, i) => {
+          const a = ACTIONS[r.action] ?? { label: r.action, kind: 'admin' as const, icon: ClipboardText };
+          const I = a.icon;
+          const highlight = r.action === 'first_login' || r.action === 'register';
+          const [summary, ...rest] = r.detail.split(' | ');
+          return (
+            <View key={i} style={{ flexDirection: 'row', gap: 12, paddingVertical: 10, borderTopWidth: i ? 1 : 0, borderTopColor: t.border }}>
+              <View style={{ width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: highlight ? t.accentSoft : t.surfaceAlt }}>
+                <I size={17} color={highlight ? t.accent : t.textMuted} weight="bold" />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <T style={{ color: t.text, fontWeight: '700' }}>{a.label}</T>
+                  <T variant="sub" numberOfLines={1}>
+                    {r.actor_name || r.actor || '알 수 없음'}{r.actor_student_no ? ` ${r.actor_student_no}` : ''}
+                  </T>
+                  <View style={{ flex: 1 }} />
+                  <T variant="small">{ago(r.at)}</T>
+                </View>
+                {r.detail ? (
+                  <T variant="small" numberOfLines={2} style={{ marginTop: 2 }}>
+                    {[summary, ...rest].join('  ·  ')}
+                  </T>
+                ) : r.target && r.action !== 'first_login' ? (
+                  <T variant="small" style={{ marginTop: 2 }}>{r.target}</T>
+                ) : null}
+              </View>
             </View>
-          ))}
-        </View>
-      )}
+          );
+        })}
+      </View>
     </Card>
   );
 }

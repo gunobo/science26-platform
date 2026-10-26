@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     env_encryption_key: str = ""
 
     discord_webhook_url: str = ""
+    # 활동 알림(첫 접속·프로젝트 등록·수정)에서 멘션할 디스코드 사용자 ID, 쉼표로 여러 명
+    discord_mention_user_ids: str = ""
 
     # 학생 스택이 접속하는 공용 인스턴스 (학생 네트워크 안에서의 별칭)
     student_pg_host: str = "postgres"
@@ -57,6 +59,10 @@ class Settings(BaseSettings):
     # 디스크 사용률: 경고 알림 / 업로드 차단
     disk_warn_ratio: float = 0.80
     disk_block_ratio: float = 0.90
+
+    @property
+    def discord_mention_id_set(self) -> set[str]:
+        return {x.strip() for x in self.discord_mention_user_ids.split(",") if x.strip().isdigit()}
 
     @property
     def admin_email_set(self) -> set[str]:

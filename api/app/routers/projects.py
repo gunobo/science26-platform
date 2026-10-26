@@ -19,9 +19,10 @@ from app.models import (
     EnvVar, Project, ProjectStatus, ProjectType, Release, ReleaseState, Role, SourceKind, User,
 )
 from app.queue import acquire_project_lock, enqueue, release_project_lock
+from app.notify import activity
 from app.security import audit, decrypt, encrypt, mapped_student, rate_limit
 from app.services import validation as v
-from app.services.projects import get_or_create_project, get_project, next_version, project_out, release_out
+from app.services.projects import student_url, get_or_create_project, get_project, next_version, project_out, release_out
 
 router = APIRouter(prefix="/projects/me", tags=["projects"])
 
@@ -59,6 +60,7 @@ async def update_project(
 ):
     s = get_settings()
     project = await get_or_create_project(db, user)
+    before = {"title": project.title, "description": project.description, "slug": project.slug, "listed": project.listed}
     if title is not None:
         project.title = title.strip()[:100]
     if description is not None:
@@ -91,6 +93,19 @@ async def update_project(
         path.write_bytes(data)
         project.thumbnail_path = str(path)
 
+    changed = [name for name, on in (
+        ("제목", title is not None and title.strip()[:100] != before["title"]),
+        ("설명", description is not None and description.strip()[:2000] != before["description"]),
+        (f"링크 이름 {before['slug']} → {project.slug}", slug_changed),
+        ("썸네일", thumbnail is not None and bool(thumbnail.filename)),
+        ("전시관 " + ("공개" if project.listed else "숨김"), listed is not None and listed != before["listed"]),
+    ) if on]
+    if changed:
+        # 제목을 한 글자씩 고치며 여러 번 저장해도 멘션은 10분에 한 번만
+        await activity(
+            db, user, "update_info", "프로젝트 정보 수정", target=user.student_no,
+            detail=f"{', '.join(changed)} | {project.title or project.slug}", throttle_seconds=600,
+        )
     await db.commit()
     # 경로가 라우터 라벨에 박혀 있어서 링크 이름을 바꾸면 활성 릴리스를 다시 띄운다.
     if slug_changed and project.active_release_id:
@@ -109,7 +124,7 @@ async def delete_my_project(user: User = Depends(mapped_student), db: AsyncSessi
         raise APIError(403, "DEADLINE_PASSED", "마감 후에는 프로젝트를 삭제할 수 없습니다. 선생님께 문의하세요")
     # 빌드 중에는 지우지 않는다. 잠금은 워커가 삭제를 마친 뒤 푼다.
     await acquire_project_lock(user.student_no, "delete")
-    audit(db, user, "self_delete", user.student_no)
+    await activity(db, user, "self_delete", "프로젝트 삭제", target=user.student_no, detail=project.title or project.slug)
     await db.commit()
     await enqueue("delete_project", user.student_no)
     return {"ok": True}
@@ -147,10 +162,16 @@ async def _create_release(
         type=rtype, source_kind=kind, source_ref=ref, state=ReleaseState.queued,
     )
     db.add(release)
+    first = release.version == 1
     project.type = rtype
     if project.status in (ProjectStatus.empty, ProjectStatus.failed):
         project.status = ProjectStatus.building
-    audit(db, user, "upload", user.student_no)
+    kind_label = {ProjectType.static: "정적 웹", ProjectType.fullstack: "풀스택", ProjectType.app: "모바일 앱"}[rtype]
+    await activity(
+        db, user, "register" if first else "upload",
+        "프로젝트 등록" if first else f"새 버전 업로드 (v{release.version})",
+        target=user.student_no, detail=f"{kind_label} | {project.title or project.slug} | {student_url(project.slug)}",
+    )
     await db.commit()
     await enqueue("build_release", str(release.id))
     return release
