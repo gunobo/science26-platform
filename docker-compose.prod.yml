@@ -6,7 +6,7 @@ services:
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
       - --providers.docker.network=s26-edge
-      - --providers.docker.endpoint=tcp://docker-proxy:2375
+      - --providers.docker.endpoint=tcp://docker-proxy-ro:2375
       - --providers.file.directory=/etc/traefik/dynamic
       - --entrypoints.web.address=:80
       - --entrypoints.web.http.redirections.entrypoint.to=websecure

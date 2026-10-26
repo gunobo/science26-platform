@@ -79,3 +79,37 @@ def test_student_containers_have_log_limits(tmp_path):
     out = static_compose(student_no="1411", slug="x", version=1, seq=1, context=tmp_path,
                          public_host="h", edge_network="e", memory_mb=256, cpus=0.5, pids=128)
     assert out["services"]["web"]["logging"]["options"]["max-size"] == "5m"
+
+
+def test_login_rate_limited_per_ip(client, monkeypatch):
+    from app import security
+
+    counts: dict[str, int] = {}
+
+    async def fake_rate_limit(key, limit, window):
+        counts[key] = counts.get(key, 0) + 1
+        if counts[key] > limit:
+            raise security.APIError(429, "RATE_LIMITED", "too many")
+
+    monkeypatch.setattr(security, "rate_limit", fake_rate_limit)
+    monkeypatch.setattr("app.routers.auth.redis.set", lambda *a, **k: _noop())
+    statuses = [client.get("/api/v1/auth/google/login", follow_redirects=False).status_code for _ in range(302)]
+    assert statuses[0] == 307 and statuses[299] == 307 and statuses[-1] == 429
+
+
+async def _noop():
+    return True
+
+
+def test_upload_blocked_when_disk_full(client, monkeypatch):
+    import shutil
+    from collections import namedtuple
+
+    from app.routers import projects
+
+    Usage = namedtuple("Usage", "total used free")
+    monkeypatch.setattr(shutil, "disk_usage", lambda _: Usage(100, 95, 5))
+    import asyncio
+    with pytest.raises(projects.APIError) as e:
+        asyncio.run(projects._check_upload_allowed(None, None))
+    assert e.value.status == 507

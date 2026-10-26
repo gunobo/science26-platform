@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     student_db_alert_bytes: int = 500 * 1024 * 1024
     # 이 용량을 넘으면 학생 DB 접속을 막는다 (Postgres 에는 DB별 용량 제한이 없어서)
     student_db_limit_bytes: int = 1024 * 1024 * 1024
+    # 디스크 사용률: 경고 알림 / 업로드 차단
+    disk_warn_ratio: float = 0.80
+    disk_block_ratio: float = 0.90
 
     @property
     def admin_email_set(self) -> set[str]:

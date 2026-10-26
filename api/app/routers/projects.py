@@ -118,6 +118,9 @@ async def delete_my_project(user: User = Depends(mapped_student), db: AsyncSessi
 # ---- 업로드 ----
 
 async def _check_upload_allowed(db: AsyncSession, user: User) -> None:
+    usage = shutil.disk_usage(get_settings().data_dir)
+    if usage.used / usage.total >= get_settings().disk_block_ratio:
+        raise APIError(507, "STORAGE_FULL", "서버 저장 공간이 부족해서 지금은 올릴 수 없어요. 선생님께 알려 주세요")
     cfg = await settings_store.load(db)
     if user.role != Role.admin and cfg.upload_deadline and datetime.now(timezone.utc) > cfg.upload_deadline:
         raise APIError(403, "DEADLINE_PASSED", "업로드 마감 시간이 지났습니다")

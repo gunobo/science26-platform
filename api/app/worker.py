@@ -299,6 +299,11 @@ async def deploy(release_id: str, *, build: bool) -> None:
                 release.finished_at = now()
             project.status = ProjectStatus.running if project.active_release_id else ProjectStatus.failed
             await db.commit()
+            # 새로 올린 버전이 실패하면 소스·빌드 파일과 이미지를 바로 지운다 (롤백 대상이 아니라서 필요 없다).
+            # 정리는 성공한 배포 때만 돌기 때문에, 계속 실패하는 업로드가 디스크를 채우지 않게 한다.
+            if build and release.state == ReleaseState.failed:
+                shutil.rmtree(rdir, ignore_errors=True)
+                await d.remove_images(f"s26/stu-{project.student_no}-*:v{release.version}")
         finally:
             await buildlog.end(release_id, release.state.value)
             await release_project_lock(project.student_no)
@@ -472,8 +477,24 @@ def _mem_bytes(text: str) -> float:
     return float(m.group(1)) * mult.get(m.group(2), 1)
 
 
+async def check_disk() -> None:
+    """디스크가 차면 업로드가 막히고(API), 그 전에 관리자에게 알린다."""
+    usage = shutil.disk_usage(s.data_dir)
+    ratio = usage.used / usage.total
+    await redis.set("stats:disk", json.dumps({"used": usage.used, "total": usage.total}), ex=600)
+    if ratio >= s.disk_warn_ratio and await redis.set("alerted:disk", "1", nx=True, ex=6 * 3600):
+        await notify(
+            f"서버 디스크 {ratio:.0%} 사용 중 ({usage.free // 1024 ** 3}GB 남음). "
+            f"{s.disk_block_ratio:.0%} 를 넘으면 업로드가 막혀요"
+        )
+
+
 async def collect_stats(ctx) -> None:
     """컨테이너 사용량을 stats:{학번} 에 모아 관리자 대시보드가 읽게 한다. 이상 시 디스코드 알림."""
+    try:
+        await check_disk()
+    except OSError:
+        log.exception("디스크 확인 실패")
     try:
         stats = await d.stats()
         containers = await d.ps_labels()

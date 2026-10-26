@@ -22,7 +22,8 @@ services:
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
       - --providers.docker.network=s26-edge
-      - --providers.docker.endpoint=tcp://docker-proxy:2375
+      # Traefik 은 인터넷에 노출돼 있어서 읽기 전용 프록시만 쓴다
+      - --providers.docker.endpoint=tcp://docker-proxy-ro:2375
       - --providers.file.directory=/etc/traefik/dynamic
       - --entrypoints.web.address=:80
       # 워커 헬스체크 전용 (외부 미노출, HTTPS 리다이렉트 없음)
@@ -37,13 +38,31 @@ services:
       - "${TRAEFIK_HTTP_PORT:-80}:80"
     volumes:
       - ./infra/traefik/dynamic:/etc/traefik/dynamic:ro
-    # edge: 학생 공개 서비스, front: 대시보드·API, proxy: Docker API
-    networks: [edge, front, proxy]
-    depends_on: [docker-proxy]
+    # edge: 학생 공개 서비스, front: 대시보드·API, proxy-ro: 읽기 전용 Docker API
+    networks: [edge, front, proxy-ro]
+    depends_on: [docker-proxy-ro]
     <<: *logging
     restart: unless-stopped
 
-  # 워커·Traefik만 이 프록시를 통해 Docker API에 접근한다. API 컨테이너는 접근 불가.
+  # Traefik 용: 컨테이너·이벤트 조회만 (생성·exec·삭제 불가)
+  docker-proxy-ro:
+    image: tecnativa/docker-socket-proxy:v0.4.2
+    container_name: s26-docker-proxy-ro
+    environment:
+      DISABLE_IPV6: 1
+      CONTAINERS: 1
+      NETWORKS: 1
+      EVENTS: 1
+      INFO: 1
+      VERSION: 1
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [proxy-ro]
+    <<: *logging
+    restart: unless-stopped
+
+  # 워커만 이 프록시를 통해 Docker API 를 쓴다 (빌드·배포). API·Traefik 컨테이너는 접근 불가.
   docker-proxy:
     image: tecnativa/docker-socket-proxy:v0.4.2
     container_name: s26-docker-proxy
@@ -213,4 +232,7 @@ networks:
     name: s26-front
   proxy:
     name: s26-proxy
+    internal: true
+  proxy-ro:
+    name: s26-proxy-ro
     internal: true

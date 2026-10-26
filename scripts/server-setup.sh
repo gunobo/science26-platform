@@ -32,6 +32,10 @@ if [ ! -f /etc/docker/daemon.json ]; then
 fi
 systemctl enable --now docker
 
+echo "== 보안 업데이트 자동 설치"
+apt-get install -y unattended-upgrades
+dpkg-reconfigure -f noninteractive unattended-upgrades
+
 echo "== /data 볼륨"
 mkdir -p /data
 if [ -n "$DEVICE" ]; then
@@ -89,4 +93,5 @@ cat <<EOF
      (DATA_ROOT=/data, COOKIE_SECURE=true, ACME_EMAIL 필수)
   2) DNS: science26.bssm.dev, science26-upload.bssm.dev 의 A 레코드를 이 서버 공인 IP로
   3) docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+  4) docs/server-hardening.md: .env 를 서버 밖에 보관, SSH 키 로그인으로 전환
 EOF

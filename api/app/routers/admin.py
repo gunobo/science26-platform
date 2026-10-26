@@ -2,12 +2,14 @@ import csv
 import io
 import json
 import re
+import shutil
 
 from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import settings_store
+from app.config import get_settings
 from app.db import get_db
 from app.errors import not_found, upload_invalid
 from app.models import AuditLog, Project, Release, User
@@ -34,6 +36,12 @@ async def all_projects(_: User = Depends(admin_user), db: AsyncSession = Depends
             "stats": json.loads(stats) if stats else None,
         })
     return out
+
+
+@router.get("/system")
+async def system(_: User = Depends(admin_user)):
+    usage = shutil.disk_usage(get_settings().data_dir)
+    return {"disk": {"used": usage.used, "total": usage.total, "block_ratio": get_settings().disk_block_ratio}}
 
 
 @router.post("/projects/{student_no}/stop", status_code=202)

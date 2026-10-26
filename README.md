@@ -95,6 +95,10 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm -v ./ex
 - 업로드는 본문을 받기 전에 세션과 크기를 확인한다 (FastAPI 는 multipart 본문을 인증보다 먼저 읽는다)
 - 대시보드·API 응답에는 `X-Frame-Options: DENY`, `frame-ancestors 'none'`, `nosniff`, HSTS 를 붙인다
 - `scripts/firewall.sh`: 컨테이너 → VPC 내부 대역 차단, 컨테이너 → 호스트 SSH 차단
+- Traefik 은 읽기 전용 Docker 프록시(`docker-proxy-ro`)만 쓴다. 빌드·배포용 프록시(생성·exec 가능)는 워커만 접근
+- 디스크 80% 에서 알림, 90% 에서 업로드 차단. 실패한 빌드의 파일·이미지는 바로 지운다
+- 로그인·공개 엔드포인트는 IP 별 요청 제한 (한 반이 같은 IP 를 쓰므로 넉넉하게)
+- 서버 점검(보안 업데이트, `.env` 보관, SSH 키 로그인): `docs/server-hardening.md`
 - 학생 compose 의 `${...}` 치환은 막혀 있고, docker·git 은 비밀값이 없는 환경에서 실행한다
 - 학생 라벨은 `science26.*` 만 허용, 학생 컨테이너 로그는 5MB × 2
 

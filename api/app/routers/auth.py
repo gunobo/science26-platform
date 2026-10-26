@@ -16,7 +16,7 @@ from app.db import get_db
 from app.errors import APIError, forbidden
 from app.models import Role, User
 from app.redis_client import redis
-from app.security import SESSION_COOKIE, create_session, delete_session
+from app.security import SESSION_COOKIE, create_session, delete_session, ip_rate_limit
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -63,7 +63,8 @@ async def _login_as(db: AsyncSession, email: str, name: str) -> User:
 
 
 @router.get("/google/login")
-async def google_login():
+async def google_login(request: Request):
+    await ip_rate_limit(request, "login", limit=300)
     s = get_settings()
     state = secrets.token_urlsafe(24)
     await redis.set(f"oauth:{state}", "1", ex=600)
@@ -92,8 +93,9 @@ def _decode_id_token(token: str) -> dict:
 
 @router.get("/google/callback")
 async def google_callback(
-    code: str = "", state: str = "", error: str = "", db: AsyncSession = Depends(get_db)
+    request: Request, code: str = "", state: str = "", error: str = "", db: AsyncSession = Depends(get_db)
 ):
+    await ip_rate_limit(request, "callback", limit=300)
     s = get_settings()
     if error or not code or not await redis.getdel(f"oauth:{state}"):
         return RedirectResponse("/?error=oauth")
@@ -134,8 +136,9 @@ class DevLogin(BaseModel):
 
 
 @router.post("/dev-login")
-async def dev_login(body: DevLogin, db: AsyncSession = Depends(get_db)):
+async def dev_login(body: DevLogin, request: Request, db: AsyncSession = Depends(get_db)):
     """로컬 개발 전용. DEV_LOGIN=true 일 때만 열린다."""
+    await ip_rate_limit(request, "devlogin", limit=10)
     if os.environ.get("DEV_LOGIN") != "true":
         raise forbidden()
     if not is_allowed(body.email, body.email.rsplit("@", 1)[-1]):

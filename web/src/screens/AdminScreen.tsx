@@ -47,11 +47,13 @@ function Stat({ label, value }: { label: string; value: number }) {
 function ProjectsCard() {
   const t = useTheme();
   const [rows, setRows] = useState<AdminProject[] | null>(null);
+  const [disk, setDisk] = useState<{ used: number; total: number; block_ratio: number } | null>(null);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
 
   const load = useCallback(() => {
     api<AdminProject[]>('/admin/projects').then(setRows).catch((e) => setError(e.message));
+    api<{ disk: { used: number; total: number; block_ratio: number } }>('/admin/system').then((r) => setDisk(r.disk)).catch(() => {});
   }, []);
   useEffect(() => {
     load();
@@ -85,6 +87,7 @@ function ProjectsCard() {
           <Stat label="쉬는 중" value={count('sleeping')} />
           <Stat label="빌드 중" value={count('building')} />
           <Stat label="실패" value={count('failed')} />
+          {disk && <Stat label={`디스크 % (${Math.round(disk.block_ratio * 100)}% 넘으면 업로드 중단)`} value={Math.round((disk.used / disk.total) * 100)} />}
         </View>
       )}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: t.borderStrong, borderRadius: radius.control, paddingHorizontal: 12, marginBottom: 12, maxWidth: 360 }}>

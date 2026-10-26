@@ -67,6 +67,19 @@ async def rate_limit(key: str, limit: int, window: int) -> None:
         raise APIError(429, "RATE_LIMITED", "요청이 너무 많습니다. 잠시 후 다시 시도하세요")
 
 
+def client_ip(request: Request) -> str:
+    # API 는 Traefik(front 네트워크)으로만 들어오고, uvicorn --proxy-headers 가 X-Forwarded-For 로 채운다
+    return request.client.host if request.client else "unknown"
+
+
+async def ip_rate_limit(request: Request, name: str, limit: int, window: int = 60) -> None:
+    """로그인처럼 세션이 없는 요청은 IP 로 제한한다 (플랫폼 Redis 를 대량 요청으로 채우지 못하게).
+
+    학교에서는 한 반(최대 61명)이 공인 IP 하나를 같이 쓰므로, 한도는 대량 요청만 막을 만큼 넉넉하게 잡는다.
+    """
+    await rate_limit(f"ip:{name}:{client_ip(request)}", limit=limit, window=window)
+
+
 # ---- 암호화·파생 비밀번호 ----
 
 def fernet() -> Fernet:

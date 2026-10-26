@@ -1,7 +1,7 @@
 import html
 from pathlib import Path
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,13 +11,15 @@ from app.errors import not_found
 from app.models import Project, ProjectStatus, User
 from app.redis_client import redis
 from app.queue import enqueue
+from app.security import ip_rate_limit
 from app.services.projects import base_path, project_out, thumbnail_url
 
 router = APIRouter(prefix="/public", tags=["public"])
 
 
 @router.get("/projects")
-async def public_projects(db: AsyncSession = Depends(get_db)):
+async def public_projects(request: Request, db: AsyncSession = Depends(get_db)):
+    await ip_rate_limit(request, "public", limit=1200)
     rows = await db.execute(
         select(Project, User.name)
         .join(User, User.id == Project.owner_id)
@@ -70,8 +72,9 @@ p{{color:#666}}a{{color:#2563eb}}@media(prefers-color-scheme:dark){{body{{backgr
 
 
 @router.get("/wake/{key}")
-async def wake(key: str, db: AsyncSession = Depends(get_db)):
+async def wake(key: str, request: Request, db: AsyncSession = Depends(get_db)):
     """학생 라우터가 없을 때 Traefik 폴백이 보내는 요청. key 는 링크 이름 또는 학번."""
+    await ip_rate_limit(request, "wake", limit=1200)
     project = (
         await db.execute(select(Project).where(or_(Project.slug == key, Project.student_no == key)))
     ).scalar_one_or_none()
