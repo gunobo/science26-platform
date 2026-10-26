@@ -97,7 +97,8 @@ class E2E:
         end = time.monotonic() + timeout
         while time.monotonic() < end:
             for r in (await self.api.get("/projects/me/releases")).json():
-                if r["id"] == release_id and r["state"] in TERMINAL:
+                # 잠금까지 풀려야 다음 업로드를 받을 수 있다
+                if r["id"] == release_id and r["state"] in TERMINAL and not await redis.exists(f"lock:project:{STUDENT_NO}"):
                     return r
             await asyncio.sleep(4)
         return {"state": "timeout", "error": f"{timeout}초 안에 끝나지 않음"}

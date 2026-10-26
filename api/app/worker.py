@@ -262,12 +262,20 @@ async def deploy(release_id: str, *, build: bool) -> None:
             project.active_release_id = release.id
             project.status = ProjectStatus.running
             project.last_request_at = now()
+            # 뒷정리를 먼저 하고 나서 '서비스 중'으로 바꾼다. 반대로 하면 학생이 완료를 보자마자
+            # 다시 올릴 때 아직 잠금이 남아 BUILD_IN_PROGRESS 가 난다.
+            # 새 버전은 이미 헬스체크를 통과했으니 뒷정리가 실패해도 배포는 성공으로 둔다.
+            try:
+                for p in await d.list_projects(f"stu-{project.student_no}-v"):
+                    if p["Name"] != pname:
+                        await emit(f"이전 스택 정리: {p['Name']}")
+                        await d.down_project(p["Name"])
+                await prune_releases(db, project)
+            except Exception:
+                log.exception("배포 뒷정리 실패 %s", pname)
+                await emit("⚠️ 이전 버전 정리 중 문제가 있었지만 새 버전은 정상 배포됐어요")
             await db.commit()
-            for p in await d.list_projects(f"stu-{project.student_no}-v"):
-                if p["Name"] != pname:
-                    await emit(f"이전 스택 정리: {p['Name']}")
-                    await d.down_project(p["Name"])
-            await prune_releases(db, project)
+            await release_project_lock(project.student_no)
             await buildlog.append(release_id, "active", kind="state")
             await emit(f"✅ 배포 완료: {student_url(project.slug)}")
         except Exception as e:
