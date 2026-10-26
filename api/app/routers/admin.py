@@ -3,9 +3,11 @@ import io
 import json
 import re
 import shutil
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, File, UploadFile
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, File, Query, UploadFile
+from sqlalchemy import func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import settings_store
@@ -134,17 +136,45 @@ async def put_settings(
     return cfg
 
 
+# 관리자 화면 '최근 활동' 필터 → action 묶음
+ACTIVITY_KINDS = {
+    "login": ["first_login"],
+    "project": ["register", "upload", "update_info", "rollback", "slug", "env", "stop", "start", "self_delete"],
+    "admin": ["admin_stop", "delete", "import_users", "settings"],
+}
+TODAY_ACTIONS = ["first_login", "register", "upload", "update_info"]
+KST = ZoneInfo("Asia/Seoul")
+
+
 @router.get("/audit-logs")
-async def audit_logs(_: User = Depends(admin_user), db: AsyncSession = Depends(get_db)):
+async def audit_logs(
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    kind: str = Query("all", pattern="^(all|login|project|admin)$"),
+    _: User = Depends(admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    cond = AuditLog.action.in_(ACTIVITY_KINDS[kind]) if kind != "all" else true()
+    total = await db.scalar(select(func.count()).select_from(AuditLog).where(cond))
     rows = await db.execute(
-        select(AuditLog, User).outerjoin(User, User.id == AuditLog.actor_id)
-        .order_by(AuditLog.id.desc()).limit(200)
+        select(AuditLog, User).outerjoin(User, User.id == AuditLog.actor_id).where(cond)
+        .order_by(AuditLog.id.desc()).offset((page - 1) * size).limit(size)
     )
-    return [
-        {
-            "at": log.at.isoformat(), "action": log.action, "target": log.target, "detail": log.detail,
-            "actor": u.email if u else None, "actor_name": u.name if u else None,
-            "actor_student_no": u.student_no if u else None,
-        }
-        for log, u in rows
-    ]
+    # 오늘(한국 시간) 집계는 페이지·필터와 상관없이
+    start = datetime.now(KST).replace(hour=0, minute=0, second=0, microsecond=0)
+    today = dict((await db.execute(
+        select(AuditLog.action, func.count()).where(AuditLog.action.in_(TODAY_ACTIONS), AuditLog.at >= start)
+        .group_by(AuditLog.action)
+    )).all())
+    return {
+        "items": [
+            {
+                "at": log.at.isoformat(), "action": log.action, "target": log.target, "detail": log.detail,
+                "actor": u.email if u else None, "actor_name": u.name if u else None,
+                "actor_student_no": u.student_no if u else None,
+            }
+            for log, u in rows
+        ],
+        "total": total, "page": page, "size": size,
+        "today": {a: today.get(a, 0) for a in TODAY_ACTIONS},
+    }

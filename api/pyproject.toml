@@ -17,6 +17,8 @@ dependencies = [
   "pyyaml>=6",
   "pyaxmlparser>=0.3.31",
   "segno>=1.6",
+  # 슬림 이미지에 시간대 데이터가 없을 수 있어서 (관리자 화면 오늘 집계)
+  "tzdata>=2024.1",
 ]
 
 [project.optional-dependencies]

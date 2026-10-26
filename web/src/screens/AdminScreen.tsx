@@ -2,7 +2,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Linking, Pressable, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import {
-  ArrowCounterClockwise, ArrowsClockwise, Bell, ClipboardText, FileCsv, Key, MagnifyingGlass, PencilSimple, Play, SignIn,
+  ArrowCounterClockwise, ArrowsClockwise, Bell, CaretLeft, CaretRight, ClipboardText, FileCsv, Key, MagnifyingGlass, PencilSimple, Play, SignIn,
   Sliders, Sparkle, Stop, Trash, UploadSimple, UsersThree,
 } from '@phosphor-icons/react';
 
@@ -252,36 +252,43 @@ function ago(iso: string) {
   return new Date(iso).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+type ActivityPage = { items: Activity[]; total: number; page: number; size: number; today: Record<string, number> };
+const PAGE_SIZE = 20;
+
 function ActivityCard() {
   const t = useTheme();
-  const [rows, setRows] = useState<Activity[] | null>(null);
+  const [data, setData] = useState<ActivityPage | null>(null);
   const [kind, setKind] = useState<Kind>('all');
+  const [page, setPage] = useState(1);
   const [error, setError] = useState('');
 
   const load = useCallback(() => {
-    api<Activity[]>('/admin/audit-logs').then((r) => { setRows(r); setError(''); }).catch((e) => setError(e.message));
-  }, []);
+    api<ActivityPage>(`/admin/audit-logs?page=${page}&size=${PAGE_SIZE}&kind=${kind}`)
+      .then((r) => { setData(r); setError(''); })
+      .catch((e) => setError(e.message));
+  }, [page, kind]);
   useEffect(() => {
     load();
+    // 새 활동은 첫 페이지에만 들어오므로 첫 페이지일 때만 자동 새로고침 (뒤 페이지는 보는 중에 밀리지 않게)
+    if (page !== 1) return;
     const id = setInterval(load, 20000);
     return () => clearInterval(id);
-  }, [load]);
+  }, [load, page]);
 
-  const today = new Date().toDateString();
-  const todayCount = (a: string) => rows?.filter((r) => r.action === a && new Date(r.at).toDateString() === today).length ?? 0;
-  const shown = rows?.filter((r) => kind === 'all' || ACTIONS[r.action]?.kind === kind).slice(0, 60);
+  const pages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
+  const changeKind = (k: Kind) => { setKind(k); setPage(1); };
 
   return (
     <Card title="최근 활동" icon={Bell} right={<Button label="새로고침" kind="ghost" small icon={ArrowsClockwise} onPress={load} />}>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 28, marginBottom: 16 }}>
-        <Stat label="오늘 첫 접속" value={todayCount('first_login')} />
-        <Stat label="오늘 프로젝트 등록" value={todayCount('register')} />
-        <Stat label="오늘 업로드" value={todayCount('upload')} />
-        <Stat label="오늘 정보 수정" value={todayCount('update_info')} />
+        <Stat label="오늘 첫 접속" value={data?.today.first_login ?? 0} />
+        <Stat label="오늘 프로젝트 등록" value={data?.today.register ?? 0} />
+        <Stat label="오늘 업로드" value={data?.today.upload ?? 0} />
+        <Stat label="오늘 정보 수정" value={data?.today.update_info ?? 0} />
       </View>
       <Segmented
         value={kind}
-        onChange={setKind}
+        onChange={changeKind}
         options={[
           { value: 'all', label: '전체' },
           { value: 'login', label: '접속' },
@@ -290,16 +297,15 @@ function ActivityCard() {
         ]}
       />
       {error ? <Notice kind="error" text={error} /> : null}
-      {!rows && !error && <Skeleton h={160} />}
-      {shown && shown.length === 0 && <T variant="sub">아직 기록이 없어요.</T>}
+      {!data && !error && <Skeleton h={160} />}
+      {data && data.items.length === 0 && <T variant="sub">아직 기록이 없어요.</T>}
       <View style={{ gap: 2 }}>
-        {shown?.map((r, i) => {
+        {data?.items.map((r, i) => {
           const a = ACTIONS[r.action] ?? { label: r.action, kind: 'admin' as const, icon: ClipboardText };
           const I = a.icon;
           const highlight = r.action === 'first_login' || r.action === 'register';
-          const [summary, ...rest] = r.detail.split(' | ');
           return (
-            <View key={i} style={{ flexDirection: 'row', gap: 12, paddingVertical: 10, borderTopWidth: i ? 1 : 0, borderTopColor: t.border }}>
+            <View key={`${r.at}-${i}`} style={{ flexDirection: 'row', gap: 12, paddingVertical: 10, borderTopWidth: i ? 1 : 0, borderTopColor: t.border }}>
               <View style={{ width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: highlight ? t.accentSoft : t.surfaceAlt }}>
                 <I size={17} color={highlight ? t.accent : t.textMuted} weight="bold" />
               </View>
@@ -313,9 +319,7 @@ function ActivityCard() {
                   <T variant="small">{ago(r.at)}</T>
                 </View>
                 {r.detail ? (
-                  <T variant="small" numberOfLines={2} style={{ marginTop: 2 }}>
-                    {[summary, ...rest].join('  ·  ')}
-                  </T>
+                  <T variant="small" numberOfLines={2} style={{ marginTop: 2 }}>{r.detail.split(' | ').join('  ·  ')}</T>
                 ) : r.target && r.action !== 'first_login' ? (
                   <T variant="small" style={{ marginTop: 2 }}>{r.target}</T>
                 ) : null}
@@ -324,6 +328,42 @@ function ActivityCard() {
           );
         })}
       </View>
+      {data && data.total > PAGE_SIZE && (
+        <Pager page={page} pages={pages} total={data.total} onChange={setPage} />
+      )}
     </Card>
+  );
+}
+
+function Pager({ page, pages, total, onChange }: { page: number; pages: number; total: number; onChange: (p: number) => void }) {
+  const t = useTheme();
+  // 현재 페이지 주변 5개 + 처음·끝
+  const nums = Array.from(new Set([1, ...Array.from({ length: 5 }, (_, i) => page - 2 + i), pages]))
+    .filter((n) => n >= 1 && n <= pages)
+    .sort((a, b) => a - b);
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: t.border }}>
+      <T variant="small">전체 {total}건 · {page}/{pages} 페이지</T>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+        <Button label="이전" kind="ghost" small icon={CaretLeft} disabled={page <= 1} onPress={() => onChange(page - 1)} />
+        {nums.map((n, i) => (
+          <View key={n} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            {i > 0 && n - nums[i - 1] > 1 && <T variant="small">…</T>}
+            <Pressable
+              onPress={() => onChange(n)}
+              accessibilityRole="button"
+              accessibilityLabel={`${n} 페이지`}
+              style={({ hovered }: any) => ({
+                minWidth: 32, height: 32, borderRadius: radius.control, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6,
+                backgroundColor: n === page ? t.accent : hovered ? t.surfaceAlt : 'transparent',
+              })}
+            >
+              <Text style={{ fontFamily: font.family, fontSize: 13.5, fontWeight: '700', color: n === page ? t.accentText : t.textSub }}>{n}</Text>
+            </Pressable>
+          </View>
+        ))}
+        <Button label="다음" kind="ghost" small icon={CaretRight} disabled={page >= pages} onPress={() => onChange(page + 1)} />
+      </View>
+    </View>
   );
 }
