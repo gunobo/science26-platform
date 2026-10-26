@@ -10,7 +10,7 @@ x-app-env: &app-env
 
 services:
   traefik:
-    image: traefik:v3.1
+    image: traefik:v3.6
     container_name: s26-traefik
     command:
       - --providers.docker=true
@@ -37,9 +37,11 @@ services:
 
   # 워커·Traefik만 이 프록시를 통해 Docker API에 접근한다. API 컨테이너는 접근 불가.
   docker-proxy:
-    image: tecnativa/docker-socket-proxy:0.2
+    image: tecnativa/docker-socket-proxy:v0.4.2
     container_name: s26-docker-proxy
     environment:
+      # NCP 서버는 IPv6가 꺼져 있어서 [::]:2375 바인딩이 실패한다
+      DISABLE_IPV6: 1
       CONTAINERS: 1
       IMAGES: 1
       NETWORKS: 1
