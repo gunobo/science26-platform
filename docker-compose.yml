@@ -53,7 +53,9 @@ services:
       VERSION: 1
       DISTRIBUTION: 1
       EVENTS: 1
-      EXEC: 0
+      # buildx(docker compose v5)의 기본 빌더는 BuildKit 컨테이너에 exec 로 붙는다.
+      # 이 프록시는 이미 컨테이너 생성(POST)을 허용하므로 EXEC 로 늘어나는 권한은 사실상 없다.
+      EXEC: 1
       POST: 1
       DELETE: 1
     volumes:
