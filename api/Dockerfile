@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.12-slim-bookworm
 
 # 워커가 docker compose / git 을 쓴다. API 컨테이너도 같은 이미지지만 Docker 소켓은 받지 않는다.
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl \

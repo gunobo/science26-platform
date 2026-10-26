@@ -154,7 +154,7 @@ def test_rewrite(tmp_path):
 
 def test_rewrite_strips_student_traefik_labels(tmp_path):
     compose = {"services": {"web": {"image": "nginx", "labels": {
-        "science26.public": "true", "traefik.http.routers.evil.rule": "Host(`upload.science26.bssm.dev`)"}}}}
+        "science26.public": "true", "traefik.http.routers.evil.rule": "Host(`science26-upload.bssm.dev`)"}}}}
     root = _project(tmp_path, compose)
     spec = v.parse_compose((root / "docker-compose.yml").read_text(), root)
     out = rewrite(spec, root=root, student_no="1411", slug="1411", version=1, seq=1, env={},

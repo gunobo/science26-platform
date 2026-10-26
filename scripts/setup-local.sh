@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 로컬 개발용 환경 파일을 만든다 (이미 있으면 건드리지 않음). 비밀값은 화면에 출력하지 않는다.
-# 접속: http://upload.science26.localhost:8080 (대시보드), http://science26.localhost:8080 (공개 목록)
+# 접속: http://science26-upload.localhost:8080 (대시보드), http://science26.localhost:8080 (공개 목록)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 TARGET=".env"
@@ -10,7 +10,7 @@ if [ -f "$TARGET" ]; then
 fi
 {
   echo "PUBLIC_HOST=science26.localhost"
-  echo "UPLOAD_HOST=upload.science26.localhost"
+  echo "UPLOAD_HOST=science26-upload.localhost"
   echo "GOOGLE_CLIENT_ID="
   echo "GOOGLE_CLIENT_SECRET="
   echo "ALLOWED_GOOGLE_DOMAINS=bssm.hs.kr"

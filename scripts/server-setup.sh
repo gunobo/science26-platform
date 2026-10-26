@@ -82,6 +82,6 @@ cat <<EOF
 완료. 다음 단계:
   1) cd $APP_DIR && cp .env.example .env && ./scripts/gen-secrets.sh  → 출력값과 도메인·구글 OAuth 값을 .env 에 채우기
      (DATA_ROOT=/data, COOKIE_SECURE=true, ACME_EMAIL 필수)
-  2) DNS: science26.bssm.dev, upload.science26.bssm.dev 의 A 레코드를 이 서버 공인 IP로
+  2) DNS: science26.bssm.dev, science26-upload.bssm.dev 의 A 레코드를 이 서버 공인 IP로
   3) docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 EOF

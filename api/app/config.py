@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     public_host: str = "science26.bssm.dev"
-    upload_host: str = "upload.science26.bssm.dev"
+    upload_host: str = "science26-upload.bssm.dev"
 
     database_url: str = "postgresql+asyncpg://science26:science26@localhost:5432/science26"
     redis_url: str = "redis://localhost:6379/0"

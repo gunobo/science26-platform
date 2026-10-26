@@ -1,6 +1,6 @@
 // 대시보드는 upload 호스트에서 같은 오리진 /api/v1 을 쓰고,
 // 공개 목록(science26.bssm.dev)은 쿠키 없이 upload 호스트의 /public 만 부른다.
-export const UPLOAD_HOST = process.env.EXPO_PUBLIC_UPLOAD_HOST || 'upload.science26.bssm.dev';
+export const UPLOAD_HOST = process.env.EXPO_PUBLIC_UPLOAD_HOST || 'science26-upload.bssm.dev';
 export const PUBLIC_HOST = process.env.EXPO_PUBLIC_PUBLIC_HOST || 'science26.bssm.dev';
 
 const isPublicHost = () =>

@@ -24,7 +24,7 @@ scripts/      비밀값 생성, 백업(pg_dump → NCP Object Storage), 방화�
 ## 실행
 
 ```bash
-# 로컬: http://upload.science26.localhost:8080 (대시보드), http://science26.localhost:8080 (공개 목록)
+# 로컬: http://science26-upload.localhost:8080 (대시보드), http://science26.localhost:8080 (공개 목록)
 ./scripts/setup-local.sh
 docker compose up -d --build
 

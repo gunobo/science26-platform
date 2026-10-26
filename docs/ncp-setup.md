@@ -44,9 +44,10 @@ Docker 설치, `/data` 마운트, 스왑 4GB, 저장소 클론(`/opt/science26`)
 bssm.dev DNS 관리 화면에서 A 레코드 두 개를 서버 공인 IP로:
 
 - `science26.bssm.dev`
-- `upload.science26.bssm.dev`
+- `science26-upload.bssm.dev`
 
-Cloudflare 에서 DNS 를 관리한다면 두 레코드 모두 **DNS only(회색 구름)** 로 둔다. 프록시를 켜면 Let's Encrypt 인증과 충돌하고, 두 단계 서브도메인은 Cloudflare 무료 인증서가 커버하지 못한다.
+대시보드를 `upload.science26` 같은 두 단계가 아니라 `science26-upload` 한 단계로 둔 건 DNS 관리상 한 단계 서브도메인만 쓸 수 있어서다.
+Cloudflare 에서 DNS 를 관리한다면 두 레코드 모두 **DNS only(회색 구름)** 로 둔다. 프록시를 켜면 Let's Encrypt HTTP 인증과 충돌할 수 있다.
 
 ## 6. 환경변수와 실행
 
@@ -58,7 +59,7 @@ vi .env                      # 도메인, 구글 OAuth, ADMIN_EMAILS, ACME_EMAIL
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
-- 구글 OAuth 리디렉트 URI: `https://upload.science26.bssm.dev/api/v1/auth/google/callback`
+- 구글 OAuth 리디렉트 URI: `https://science26-upload.bssm.dev/api/v1/auth/google/callback`
 - 작은 서버에서는 `.env` 에 `CONCURRENT_BUILDS=1`, `RELEASES_KEPT=2` 추가 권장
 - 첫 접속 시 인증서 발급에 수십 초 걸릴 수 있다
 
