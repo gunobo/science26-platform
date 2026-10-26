@@ -25,6 +25,7 @@ from app.config import get_settings
 from app.db import SessionLocal
 from app.models import Role, User
 from app.redis_client import redis
+from app.security import SESSION_COOKIE
 
 EMAIL = "e2e-test@science26.local"
 STUDENT_NO = "9999"
@@ -86,7 +87,7 @@ class E2E:
         self.page = f"{s.public_url}/students/{SLUG}/"
         self.api = httpx.AsyncClient(
             base_url=f"{s.upload_url}/api/v1",
-            cookies={"s26_session": sid},
+            cookies={SESSION_COOKIE: sid},
             headers={"X-S26-Request": "1", "Origin": s.upload_url},
             timeout=60,
         )

@@ -33,6 +33,9 @@ def escape_interpolation(spec: dict) -> dict:
     """compose 파일에 쓰기 직전에 모든 $ 를 $$ 로 바꿔 docker compose 가 변수 치환을 하지 않게 한다."""
     return _walk(spec, lambda s: s.replace("$", "$$"))
 
+# infra/traefik/dynamic/students.yml 에 정의된 학생 응답 헤더 필터
+STUDENT_HEADERS = "student-response-headers@file"
+
 FRONT_PRIORITY_BASE = 1_000
 API_PRIORITY_BASE = 1_000_000
 
@@ -75,7 +78,7 @@ def traefik_labels(
         f"traefik.http.services.{name}.loadbalancer.server.port": str(port),
         f"traefik.http.middlewares.{name}-strip.stripprefix.prefixes": prefix,
     }
-    middlewares = [f"{name}-strip"]
+    middlewares = [STUDENT_HEADERS, f"{name}-strip"]
     if not api:
         # /students/1411 → /students/1411/ (상대경로 에셋이 깨지지 않게)
         labels[f"traefik.http.middlewares.{name}-slash.redirectregex.regex"] = f"^(https?://[^/]+{base})$"

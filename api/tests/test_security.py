@@ -113,3 +113,19 @@ def test_upload_blocked_when_disk_full(client, monkeypatch):
     with pytest.raises(projects.APIError) as e:
         asyncio.run(projects._check_upload_allowed(None, None))
     assert e.value.status == 507
+
+
+def test_session_cookie_uses_host_prefix_in_production():
+    from app.security import SESSION_COOKIE
+
+    # 기본 설정(cookie_secure=True)에서는 하위 도메인이 덮어쓸 수 없는 __Host- 쿠키
+    assert SESSION_COOKIE == "__Host-s26_session"
+
+
+def test_traefik_dynamic_file_strips_service_worker_allowed():
+    import yaml
+    from pathlib import Path
+
+    conf = yaml.safe_load((Path(__file__).parents[2] / "infra/traefik/dynamic/students.yml").read_text())
+    hdr = conf["http"]["middlewares"]["student-response-headers"]["headers"]["customResponseHeaders"]
+    assert hdr == {"Service-Worker-Allowed": ""}

@@ -14,7 +14,11 @@ from app.errors import APIError, forbidden, unauthorized
 from app.models import AuditLog, Role, User
 from app.redis_client import redis
 
-SESSION_COOKIE = "s26_session"
+# __Host- 접두사: 브라우저가 Secure·Path=/·Domain 없음일 때만 받아들인다.
+# 학생 페이지(science26.bssm.dev)가 Domain=bssm.dev 로 같은 이름의 쿠키를 심어 끼워 넣지 못하게 한다.
+# 로컬 개발(HTTP)에서는 Secure 쿠키를 못 쓰니 접두사 없이.
+LEGACY_SESSION_COOKIE = "s26_session"
+SESSION_COOKIE = "__Host-s26_session" if get_settings().cookie_secure else LEGACY_SESSION_COOKIE
 
 
 # ---- 세션 ----

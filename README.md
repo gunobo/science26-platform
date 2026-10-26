@@ -98,7 +98,9 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm -v ./ex
 - Traefik 은 읽기 전용 Docker 프록시(`docker-proxy-ro`)만 쓴다. 빌드·배포용 프록시(생성·exec 가능)는 워커만 접근
 - 디스크 80% 에서 알림, 90% 에서 업로드 차단. 실패한 빌드의 파일·이미지는 바로 지운다
 - 로그인·공개 엔드포인트는 IP 별 요청 제한 (한 반이 같은 IP 를 쓰므로 넉넉하게)
-- 서버 점검(보안 업데이트, `.env` 보관, SSH 키 로그인): `docs/server-hardening.md`
+- 세션 쿠키는 `__Host-s26_session`: 학생 페이지가 `Domain=bssm.dev` 쿠키를 심어 대시보드 세션을 바꿔치기하지 못한다
+- 학생 응답의 `Service-Worker-Allowed` 헤더는 Traefik 이 지운다: 한 학생의 서비스 워커가 사이트 전체를 가로채지 못하게
+- 서버 점검(보안 업데이트, `.env` 보관, SSH 키 로그인, 알림, 외부 감시): `docs/server-hardening.md`
 - 학생 compose 의 `${...}` 치환은 막혀 있고, docker·git 은 비밀값이 없는 환경에서 실행한다
 - 학생 라벨은 `science26.*` 만 허용, 학생 컨테이너 로그는 5MB × 2
 

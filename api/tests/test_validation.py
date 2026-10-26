@@ -180,7 +180,13 @@ def test_static_compose(tmp_path):
 
 def test_traefik_labels_api_has_no_slash_redirect():
     labels = traefik_labels("1411", "game", 1, 1, "h", "e", 8000, api=True)
-    assert labels["traefik.http.routers.stu-1411-v1-api.middlewares"] == "stu-1411-v1-api-strip"
+    assert labels["traefik.http.routers.stu-1411-v1-api.middlewares"] == "student-response-headers@file,stu-1411-v1-api-strip"
+
+
+def test_student_routers_strip_service_worker_scope_header():
+    front = traefik_labels("1411", "game", 1, 1, "h", "e", 8080)
+    mws = front["traefik.http.routers.stu-1411-v1.middlewares"].split(",")
+    assert "student-response-headers@file" in mws and mws[-1] == "stu-1411-v1-strip"
 
 
 @pytest.mark.parametrize("slug,ok", [

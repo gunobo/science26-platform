@@ -16,7 +16,7 @@ from app.db import get_db
 from app.errors import APIError, forbidden
 from app.models import Role, User
 from app.redis_client import redis
-from app.security import SESSION_COOKIE, create_session, delete_session, ip_rate_limit
+from app.security import LEGACY_SESSION_COOKIE, SESSION_COOKIE, create_session, delete_session, ip_rate_limit
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -36,6 +36,9 @@ def _redirect_uri() -> str:
 
 def _set_session_cookie(response, sid: str) -> None:
     s = get_settings()
+    # 예전 이름의 쿠키는 지운다 (__Host- 로 바꾼 뒤 남은 것)
+    if SESSION_COOKIE != LEGACY_SESSION_COOKIE:
+        response.delete_cookie(LEGACY_SESSION_COOKIE, path="/")
     # Domain 속성을 빼서 upload 호스트 전용 쿠키로 둔다 (학생 페이지 오리진에 노출되지 않음).
     response.set_cookie(
         SESSION_COOKIE,

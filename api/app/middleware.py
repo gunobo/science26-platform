@@ -9,6 +9,7 @@ from http.cookies import SimpleCookie
 
 from app.config import get_settings
 from app.redis_client import redis
+from app.security import SESSION_COOKIE
 
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 CSRF_HEADER = b"x-s26-request"
@@ -65,7 +66,7 @@ class SecurityGuard:
         # 3) 큰 업로드 경로는 세션이 유효할 때만 본문을 받는다
         if path in NEEDS_SESSION:
             cookie = SimpleCookie(headers.get(b"cookie", b"").decode())
-            sid = cookie.get("s26_session")
+            sid = cookie.get(SESSION_COOKIE)
             if sid is None or not await redis.exists(f"sess:{sid.value}"):
                 return await _reject(send, 401, "UNAUTHORIZED", "로그인이 필요합니다")
 

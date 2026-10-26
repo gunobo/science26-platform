@@ -8,6 +8,13 @@ http:
       service: s26-api@docker
       middlewares: [students-wake-rewrite]
   middlewares:
+    # 모든 학생 라우터에 붙는다. 학생 페이지는 한 도메인을 같이 쓰므로,
+    # 한 학생의 서비스 워커가 사이트 전체(전시관·다른 학생 페이지)를 가로채지 못하게
+    # 범위를 넓히는 Service-Worker-Allowed 응답 헤더를 지운다 (빈 값 = 삭제).
+    student-response-headers:
+      headers:
+        customResponseHeaders:
+          Service-Worker-Allowed: ""
     students-wake-rewrite:
       replacePathRegex:
         regex: "^/students/([a-z0-9-]{1,32}).*"
