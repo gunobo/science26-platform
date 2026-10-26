@@ -461,10 +461,45 @@ async def collect_stats(ctx) -> None:
                 await notify(f"{c['Names']} 컨테이너 상태: {c.get('Status')}")
 
 
+async def recover_interrupted() -> None:
+    """워커가 빌드 도중 꺼졌으면 그 릴리스는 영영 끝나지 않는다. 시작할 때 실패로 정리하고 잠금을 푼다.
+
+    큐에서 기다리던(queued) 잡은 그대로 두고, 실제로 진행 중이던 단계만 정리한다.
+    잡 재시도는 max_tries=1 로 막아서 정리한 릴리스가 나중에 다시 돌지 않게 한다.
+    """
+    in_progress = (ReleaseState.validating, ReleaseState.building, ReleaseState.deploying)
+    async with SessionLocal() as db:
+        rows = (await db.execute(select(Release).where(Release.state.in_(in_progress)))).scalars().all()
+        for release in rows:
+            project = await db.get(Project, release.project_id)
+            # 서비스 중인 버전을 다시 배포하던 중(롤백·링크 이름 변경)이면 그 스택은 살아 있으니 건드리지 않는다
+            if release.id == project.active_release_id:
+                release.state = ReleaseState.active
+                await db.commit()
+                await buildlog.end(str(release.id), "active")
+                await release_project_lock(project.student_no)
+                continue
+            release.state = ReleaseState.failed
+            release.error = "워커가 다시 시작되면서 빌드가 중단됐어요. 다시 올려 주세요."
+            release.finished_at = now()
+            if project.status == ProjectStatus.building:
+                project.status = ProjectStatus.running if project.active_release_id else ProjectStatus.failed
+            await db.commit()
+            try:
+                await d.down_project(project_name(project.student_no, release.version))
+            except d.CommandError:
+                pass
+            await buildlog.append(str(release.id), f"❌ {release.error}")
+            await buildlog.end(str(release.id), "failed")
+            await release_project_lock(project.student_no)
+            log.warning("중단된 릴리스 정리: %s v%s", project.student_no, release.version)
+
+
 async def startup(ctx) -> None:
     logging.basicConfig(level=logging.INFO)
     ctx["build_sem"] = asyncio.Semaphore(s.concurrent_builds)
     s.releases_dir.mkdir(parents=True, exist_ok=True)
+    await recover_interrupted()
     # 서버 재부팅 뒤 on-failure 컨테이너는 자동으로 안 뜨므로 running 프로젝트를 다시 켠다.
     async with SessionLocal() as db:
         nos = [
@@ -488,5 +523,6 @@ class WorkerSettings:
     on_startup = startup
     redis_settings = redis_settings()
     max_jobs = 6
+    max_tries = 1
     job_timeout = 1800
     keep_result = 60
