@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>방명록 · science26 풀스택 테스트</title>
+<style>
+  :root { --bg:#f4f4f5; --surface:#fcfcfc; --border:#e4e4e7; --text:#18181b; --muted:#62626b; --accent:#047857; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f0f11; --surface:#18181b; --border:#2a2a2f; --text:#f2f2f3; --muted:#a1a1aa; --accent:#34d399; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif; }
+  main { max-width:640px; margin:0 auto; padding:40px 20px 64px; }
+  h1 { margin:0 0 6px; letter-spacing:-1px; }
+  .muted { color:var(--muted); font-size:14px; }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:18px; margin-top:16px; }
+  input, textarea { width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--bg); color:var(--text); font:inherit; margin-bottom:10px; }
+  button { border:0; border-radius:10px; padding:10px 16px; background:var(--accent); color:var(--surface); font-weight:600; cursor:pointer; }
+  .msg { padding:12px 0; border-top:1px solid var(--border); }
+  .msg:first-child { border-top:0; }
+  .status span { display:inline-block; margin-right:12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>방명록</h1>
+  <p class="muted">science26 풀스택 배포 테스트. 글은 PostgreSQL, 방문 수는 Redis 에 저장돼요.</p>
+  <div class="card status muted" id="status">상태 확인 중…</div>
+  <form class="card" id="form">
+    <input id="name" placeholder="이름" maxlength="30" required>
+    <textarea id="text" placeholder="남길 말" maxlength="300" rows="3" required></textarea>
+    <button>남기기</button>
+  </form>
+  <div class="card" id="list"><span class="muted">불러오는 중…</span></div>
+</main>
+<script>
+  // 같은 스택의 API 는 상대경로로 부른다: /students/{링크이름}/api/... 로 간다
+  const api = (p, o) => fetch('api/' + p, o).then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); });
+  const esc = (s) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  async function load() {
+    const list = document.getElementById('list');
+    try {
+      const rows = await api('messages');
+      list.innerHTML = rows.length
+        ? rows.map((m) => `<div class="msg"><b>${esc(m.name)}</b> <span class="muted">${new Date(m.created_at).toLocaleString('ko-KR')}</span><div>${esc(m.text)}</div></div>`).join('')
+        : '<span class="muted">아직 글이 없어요. 첫 글을 남겨 보세요.</span>';
+    } catch (e) { list.innerHTML = '<span class="muted">API 에 연결하지 못했어요 (' + e.message + ')</span>'; }
+  }
+
+  async function status() {
+    try {
+      const h = await api('health');
+      const v = await api('visits', { method: 'POST' });
+      document.getElementById('status').innerHTML =
+        `<span>API ${h.ok ? '정상' : '오류'}</span><span>DB ${h.db}</span><span>Redis ${h.redis}</span><span>방문 ${v.visits}번째</span>`;
+    } catch (e) { document.getElementById('status').textContent = 'API 연결 실패: ' + e.message; }
+  }
+
+  document.getElementById('form').onsubmit = async (e) => {
+    e.preventDefault();
+    await api('messages', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: document.getElementById('name').value, text: document.getElementById('text').value }) });
+    document.getElementById('text').value = '';
+    load();
+  };
+  status(); load();
+</script>
+</body>
+</html>

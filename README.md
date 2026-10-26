@@ -53,6 +53,15 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 `examples/static-test/index.html` 은 정적 업로드 테스트용 단일 HTML 이다.
 
+## 운영 서버 E2E 테스트
+
+테스트 전용 계정(학번 9999)으로 실제 공개 주소에 정적 → 풀스택(`examples/fullstack-test`) → 중지·재시작 → 롤백 → (APK 가 있으면) 앱까지 올려 보고, 끝나면 프로젝트와 계정을 지운다.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm -v ./examples:/examples:ro worker python -m app.e2e
+# APK 도 테스트: examples/app.apk 에 두고 --apk /examples/app.apk
+```
+
 ## 학생 풀스택 compose 규칙
 
 - 루트에 `docker-compose.yml`, 서비스 최대 3개

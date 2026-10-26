@@ -3,12 +3,13 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from app.config import get_settings
 from app.main import app
 from app.services import validation as v
 from app.services.compose import rewrite, static_compose
 
 H = {"X-S26-Request": "1"}
-UPLOAD = "https://upload.science26.bssm.dev"
+UPLOAD = get_settings().upload_url
 
 
 @pytest.fixture(scope="module")

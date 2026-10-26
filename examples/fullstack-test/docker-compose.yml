@@ -1,0 +1,14 @@
+# science26 풀스택 테스트용 방명록
+# web: 화면 (https://science26.bssm.dev/students/{링크이름}/)
+# api: 방명록·방문 수 (/students/{링크이름}/api/ → 컨테이너는 / 로 받음)
+services:
+  web:
+    build: ./web
+    expose: ["8080"]
+    labels:
+      science26.public: "true"
+  api:
+    build: ./api
+    expose: ["3000"]
+    labels:
+      science26.api: "true"

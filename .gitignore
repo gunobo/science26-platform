@@ -13,3 +13,5 @@ web/dist/
 # 학생 명단 (개인정보라 저장소에 올리지 않음)
 students*.csv
 students*.xlsx
+examples/*.zip
+examples/*.apk
