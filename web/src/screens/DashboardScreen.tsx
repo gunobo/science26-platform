@@ -2,7 +2,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Linking, Pressable, ScrollView, Switch, Text, useWindowDimensions, View } from 'react-native';
 import {
-  AndroidLogo, ArrowCounterClockwise, ArrowUpRight, Browser, ClockCounterClockwise, Copy, FileZip, GearSix,
+  AndroidLogo, ArrowCounterClockwise, ArrowUpRight, Browser, ClockCounterClockwise, Copy, DeviceMobile, FileZip, FilmStrip, GearSix,
   GithubLogo, Image as ImageIcon, Key, PencilSimple, Play, Plus, Robot, Stack, Stop, Terminal, Trash, UploadSimple,
 } from '@phosphor-icons/react';
 
@@ -125,7 +125,7 @@ const AI_TYPE_TEXT: Record<AiType, string> = {
   auto: '어떤 타입(정적 웹, 풀스택, 앱)이 맞는지 먼저 골라 주고',
   static: '정적 웹 타입으로',
   fullstack: '풀스택(docker compose) 타입으로',
-  app: '안드로이드 앱 타입으로',
+  app: '모바일 앱 타입으로 (Android 는 APK, iPhone 은 TestFlight 링크나 시연 영상)',
 };
 
 function AiHelpCard({ slug }: { slug: string }) {
@@ -231,6 +231,8 @@ function UploadCard({ disabled, onUploaded }: { disabled: boolean; onUploaded: (
   const [repo, setRepo] = useState('');
   const [branch, setBranch] = useState('main');
   const [apk, setApk] = useState<File | null>(null);
+  const [video, setVideo] = useState<File | null>(null);
+  const [testflight, setTestflight] = useState('');
   const [shots, setShots] = useState<File[]>([]);
   const [appTitle, setAppTitle] = useState('');
   const [appDesc, setAppDesc] = useState('');
@@ -247,11 +249,14 @@ function UploadCard({ disabled, onUploaded }: { disabled: boolean; onUploaded: (
       let path = '/projects/me/releases';
       if (type === 'app') {
         path = '/projects/me/app';
-        if (!apk) throw new Error('APK 파일을 선택하세요');
         if (!appTitle.trim()) throw new Error('앱 이름을 입력하세요');
+        if (!apk && !video && !testflight.trim()) throw new Error('APK, TestFlight 링크, 시연 영상 중 하나 이상을 넣어 주세요');
+        if (shots.length === 0) throw new Error('스크린샷을 1장 이상 골라 주세요');
         fd.append('title', appTitle);
         fd.append('description', appDesc);
-        fd.append('apk', apk);
+        fd.append('testflight_url', testflight.trim());
+        if (apk) fd.append('apk', apk);
+        if (video) fd.append('video', video);
         shots.forEach((f) => fd.append('screenshots', f));
       } else {
         fd.append('type', type);
@@ -267,6 +272,7 @@ function UploadCard({ disabled, onUploaded }: { disabled: boolean; onUploaded: (
       setWarnings(res.warnings);
       setFile(null);
       setApk(null);
+      setVideo(null);
       setShots([]);
       onUploaded(res.release_id);
     } catch (e: any) {
@@ -284,7 +290,7 @@ function UploadCard({ disabled, onUploaded }: { disabled: boolean; onUploaded: (
         options={[
           { value: 'static', label: '정적 웹', icon: Browser },
           { value: 'fullstack', label: '풀스택', icon: Stack },
-          { value: 'app', label: '안드로이드 앱', icon: AndroidLogo },
+          { value: 'app', label: '모바일 앱', icon: DeviceMobile },
         ]}
       />
       {type === 'static' && (
@@ -324,16 +330,22 @@ function UploadCard({ disabled, onUploaded }: { disabled: boolean; onUploaded: (
       )}
       {type === 'app' && (
         <>
+          <Hint>
+            아래 셋 중 <Text style={{ fontWeight: '700' }}>하나 이상</Text>을 넣으면 소개 페이지가 만들어지고, 설치 버튼과 QR 코드가 자동으로 붙어요.
+            iPhone 용 앱은 직접 설치 파일을 받을 수 없어서 TestFlight 링크나 시연 영상을 써요. React Native·Flutter 앱이면 웹으로 빌드해 정적 웹으로 올리는 방법도 있어요.
+          </Hint>
           <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap' }}>
             <View style={{ flex: 1, minWidth: 220 }}>
-              <FilePick icon={AndroidLogo} label="서명된 APK (최대 150MB)" file={apk?.name} onPress={async () => setApk((await pick(['application/vnd.android.package-archive', '.apk']))[0] ?? null)} />
+              <FilePick icon={AndroidLogo} label="Android: 서명된 APK (선택, 150MB)" file={apk?.name} onPress={async () => setApk((await pick(['application/vnd.android.package-archive', '.apk']))[0] ?? null)} />
             </View>
             <View style={{ flex: 1, minWidth: 220 }}>
-              <FilePick icon={ImageIcon} label="스크린샷 1~5장" file={shots.length ? `스크린샷 ${shots.length}장` : null} onPress={async () => setShots((await pick(['image/*'], true)).slice(0, 5))} />
+              <FilePick icon={FilmStrip} label="시연 영상 (선택, mp4·webm·mov 100MB)" file={video?.name} onPress={async () => setVideo((await pick(['video/mp4', 'video/webm', 'video/quicktime', '.mp4', '.webm', '.mov']))[0] ?? null)} />
             </View>
           </View>
+          <Field label="iPhone: TestFlight 공개 링크 (선택)" value={testflight} onChangeText={setTestflight} autoCapitalize="none" placeholder="https://testflight.apple.com/join/..." />
+          <FilePick icon={ImageIcon} label="스크린샷 1~5장 (필수)" file={shots.length ? `스크린샷 ${shots.length}장` : null} onPress={async () => setShots((await pick(['image/*'], true)).slice(0, 5))} />
           <Field label="앱 이름" value={appTitle} onChangeText={setAppTitle} />
-          <Field label="설명" value={appDesc} onChangeText={setAppDesc} multiline hint="소개 페이지에 그대로 보여요. 다운로드 버튼과 QR 코드는 자동으로 생겨요." />
+          <Field label="설명" value={appDesc} onChangeText={setAppDesc} multiline hint="소개 페이지에 그대로 보여요." />
         </>
       )}
       {error ? <Notice kind="error" text={error} /> : null}

@@ -263,6 +263,31 @@ def _tail(path: Path, size: int) -> bytes:
         return f.read()
 
 
+TESTFLIGHT_RE = re.compile(r"^https://testflight\.apple\.com/join/[A-Za-z0-9]{6,12}/?$")
+VIDEO_SUFFIXES = {".mp4", ".webm", ".mov"}
+
+
+def check_testflight(url: str) -> str:
+    url = url.strip()
+    if not TESTFLIGHT_RE.match(url):
+        raise ValidationError("TestFlight 공개 링크(https://testflight.apple.com/join/...)를 넣어주세요")
+    return url.rstrip("/")
+
+
+def check_video(filename: str, path: Path) -> str:
+    """확장자와 파일 앞부분(매직 바이트)으로 영상인지 확인하고 확장자를 돌려준다."""
+    suffix = Path(filename).suffix.lower()
+    if suffix not in VIDEO_SUFFIXES:
+        raise ValidationError("시연 영상은 mp4, webm, mov 만 올릴 수 있습니다")
+    with open(path, "rb") as f:
+        head = f.read(12)
+    is_mp4_family = head[4:8] == b"ftyp"          # mp4, mov
+    is_webm = head[:4] == b"\x1a\x45\xdf\xa3"     # Matroska/WebM
+    if not (is_mp4_family or is_webm):
+        raise ValidationError("영상 파일이 아니거나 손상됐습니다")
+    return suffix
+
+
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 
 

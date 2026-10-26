@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Image, Linking, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
-import { AndroidLogo, ArrowUpRight, Browser, Flask, MagnifyingGlass, Stack, UploadSimple } from '@phosphor-icons/react';
+import { ArrowUpRight, Browser, DeviceMobile, Flask, MagnifyingGlass, Stack, UploadSimple } from '@phosphor-icons/react';
 
 import { api, PublicCard, UPLOAD_HOST } from '../api';
 import { font, radius, useTheme } from '../theme';
@@ -10,7 +10,7 @@ type Filter = 'all' | 'static' | 'fullstack' | 'app';
 const TYPES: Record<Exclude<Filter, 'all'>, { label: string; icon: Icon }> = {
   static: { label: '웹', icon: Browser },
   fullstack: { label: '웹앱', icon: Stack },
-  app: { label: '앱', icon: AndroidLogo },
+  app: { label: '앱', icon: DeviceMobile },
 };
 
 const goUpload = () => Linking.openURL(`https://${UPLOAD_HOST}/`);

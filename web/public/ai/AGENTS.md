@@ -129,10 +129,17 @@ services:
 
 ---
 
-## 4. 안드로이드 앱
-- **서명된 APK** 필요 (debug 서명도 가능). `./gradlew assembleRelease` 또는 Expo `eas build -p android --profile preview`
-- APK 150MB 이하, 스크린샷 1~5장 (png/jpg/webp, 각 5MB 이하)
-- 대시보드에서 앱 이름·설명과 함께 올리면 다운로드 버튼과 QR 코드가 있는 소개 페이지가 자동으로 만들어져
+## 4. 모바일 앱
+대시보드의 **모바일 앱** 타입은 아래 셋 중 **하나 이상**과 스크린샷 1~5장(png/jpg/webp, 각 5MB 이하), 앱 이름·설명을 받아서 설치 버튼·QR 코드가 있는 소개 페이지를 만들어.
+
+| 항목 | 준비 방법 | 제한 |
+|---|---|---|
+| Android APK (선택) | **서명된 APK** (debug 서명도 가능). `./gradlew assembleRelease`, Expo 는 `eas build -p android --profile preview` | 150MB |
+| iPhone TestFlight 링크 (선택) | 애플 개발자 계정으로 TestFlight 공개 링크 발급: `https://testflight.apple.com/join/...` | 링크만 |
+| 시연 영상 (선택) | 실행 화면 녹화 | mp4·webm·mov, 100MB |
+
+- iPhone 은 설치 파일을 직접 받을 수 없어. 애플 개발자 계정이 없으면 **시연 영상**을 쓰거나, React Native(Expo)·Flutter 처럼 웹으로도 빌드되는 앱이면 **웹 빌드를 정적 웹으로** 올리는 걸 같이 안내해 (`npx expo export -p web`, `flutter build web --base-href ./`)
+- 영상은 너무 크면 해상도를 낮춰 (예: `ffmpeg -i in.mov -vf scale=-2:720 -c:v libx264 -crf 28 -c:a aac out.mp4`)
 
 ---
 

@@ -32,6 +32,9 @@ SLUG = "e2e-test"
 STATIC_MARK = "science26-e2e-static"
 TERMINAL = {"active", "failed", "superseded"}
 # 1x1 PNG (스크린샷 자리)
+TESTFLIGHT = "https://testflight.apple.com/join/E2Etest1"
+# mp4 머리(ftyp)만 있는 가짜 영상. 재생은 안 되지만 업로드 검사·전달 확인용
+VIDEO = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 64
 PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=")
 
 results: list[tuple[str, bool, str]] = []
@@ -206,20 +209,29 @@ class E2E:
         code, text = await self.page_text()
         record("롤백 후 이전 버전 표시", code == 200 and STATIC_MARK in text, f"HTTP {code}")
 
-    async def app(self, apk: Path) -> None:
+    async def app(self, apk: Path | None) -> None:
+        """모바일 앱: TestFlight 링크 + 시연 영상은 항상, APK 는 주어졌을 때만."""
+        files = [("screenshots", ("shot.png", PNG, "image/png")), ("video", ("demo.mp4", VIDEO, "video/mp4"))]
+        if apk:
+            files.append(("apk", (apk.name, apk.read_bytes(), "application/vnd.android.package-archive")))
         r = await self.api.post(
             "/projects/me/app",
-            data={"title": "E2E 앱", "description": "자동 테스트"},
-            files=[("apk", (apk.name, apk.read_bytes(), "application/vnd.android.package-archive")),
-                   ("screenshots", ("shot.png", PNG, "image/png"))],
+            data={"title": "E2E 앱", "description": "자동 테스트", "testflight_url": TESTFLIGHT},
+            files=files,
         )
-        if not record("앱 업로드 접수", r.status_code == 202, r.text[:160]):
+        if not record("모바일 앱 업로드 접수", r.status_code == 202, r.text[:160] if r.status_code != 202 else ""):
             return
         await self.deployed("앱 소개 페이지 배포", await self.wait_release(r.json()["release_id"], 240))
         code, text = await self.page_text()
-        record("앱 소개 페이지", code == 200 and "APK 다운로드" in text, f"HTTP {code}")
-        a = await self.web.get(self.page + "app.apk")
-        record("APK 다운로드", a.status_code == 200 and len(a.content) == apk.stat().st_size, f"HTTP {a.status_code}")
+        record("앱 소개 페이지", code == 200 and "E2E 앱" in text, f"HTTP {code}")
+        record("TestFlight 설치 버튼", TESTFLIGHT in text)
+        v = await self.web.get(self.page + "demo.mp4")
+        record("시연 영상", "<video" in text and v.status_code == 200 and v.content == VIDEO, f"HTTP {v.status_code}")
+        if apk:
+            a = await self.web.get(self.page + "app.apk")
+            record("APK 다운로드", "APK 다운로드" in text and a.status_code == 200 and len(a.content) == apk.stat().st_size, f"HTTP {a.status_code}")
+        else:
+            print("SKIP  APK (--apk 로 APK 경로를 주면 테스트)")
 
     async def delete_project(self, quiet: bool = False) -> None:
         r = await self.api.delete("/projects/me")
@@ -237,7 +249,7 @@ class E2E:
 
 async def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--apk", type=Path, help="서명된 APK 경로 (없으면 앱 단계 건너뜀)")
+    parser.add_argument("--apk", type=Path, help="서명된 APK 경로 (없으면 APK 확인만 건너뜀)")
     parser.add_argument("--keep", action="store_true", help="끝나고 테스트 프로젝트·계정을 지우지 않음")
     args = parser.parse_args()
 
@@ -252,13 +264,10 @@ async def main() -> int:
                 await t.stop_start()
             if static_id:
                 await t.rollback(static_id)
-            if args.apk:
-                if args.apk.exists():
-                    await t.app(args.apk)
-                else:
-                    record("앱", False, f"{args.apk} 없음")
+            if args.apk and not args.apk.exists():
+                record("APK", False, f"{args.apk} 없음")
             else:
-                print("SKIP  앱 (--apk 로 APK 경로를 주면 테스트)")
+                await t.app(args.apk)
     except Exception as e:
         record("예상 못 한 오류", False, f"{type(e).__name__}: {e}")
     finally:

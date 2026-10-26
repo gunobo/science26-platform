@@ -224,12 +224,19 @@ async def upload_release(
 async def upload_app(
     title: str = Form(...),
     description: str = Form(""),
-    apk: UploadFile = File(...),
+    testflight_url: str = Form(""),
+    apk: UploadFile | None = File(None),
+    video: UploadFile | None = File(None),
     screenshots: list[UploadFile] = File(...),
     user: User = Depends(mapped_student),
     db: AsyncSession = Depends(get_db),
 ):
+    """모바일 앱 소개 페이지. APK(안드로이드)·TestFlight 링크(iOS)·시연 영상 중 하나 이상."""
     s = get_settings()
+    has_apk = apk is not None and bool(apk.filename)
+    has_video = video is not None and bool(video.filename)
+    if not (has_apk or has_video or testflight_url.strip()):
+        raise upload_invalid("APK, TestFlight 링크, 시연 영상 중 하나 이상이 필요합니다")
     if not 1 <= len(screenshots) <= 5:
         raise upload_invalid("스크린샷은 1~5장이어야 합니다")
     await _check_upload_allowed(db, user)
@@ -239,27 +246,33 @@ async def upload_app(
     await acquire_project_lock(user.student_no, str(release_id))
     rdir = s.releases_dir / str(release_id)
     (rdir / "shots").mkdir(parents=True, exist_ok=True)
+    meta: dict = {"title": title.strip()[:100], "description": description.strip()[:2000]}
     try:
-        if not (apk.filename or "").lower().endswith(".apk"):
-            raise upload_invalid("APK 파일을 올려주세요")
-        apk_path = rdir / "app.apk"
-        await run_in_threadpool(_save, apk, apk_path, s.max_apk_bytes)
-        info = await run_in_threadpool(v.inspect_apk, apk_path)
+        if testflight_url.strip():
+            meta["testflight_url"] = v.check_testflight(testflight_url)
+        if has_apk:
+            if not (apk.filename or "").lower().endswith(".apk"):
+                raise upload_invalid("APK 파일을 올려주세요")
+            apk_path = rdir / "app.apk"
+            await run_in_threadpool(_save, apk, apk_path, s.max_apk_bytes)
+            info = await run_in_threadpool(v.inspect_apk, apk_path)
+            meta.update(apk=True, package=info.package, version_name=info.version_name, version_code=info.version_code)
+        if has_video:
+            tmp = rdir / "video.upload"
+            await run_in_threadpool(_save, video, tmp, s.max_video_bytes)
+            suffix = v.check_video(video.filename or "", tmp)
+            tmp.rename(rdir / f"demo{suffix}")
+            meta["video"] = f"demo{suffix}"
         for i, shot in enumerate(screenshots):
             data = await shot.read()
             v.check_image(shot.filename or "", len(data), s.max_image_bytes)
             (rdir / "shots" / f"{i + 1}{Path(shot.filename).suffix.lower()}").write_bytes(data)
-        (rdir / "meta.json").write_text(
-            json.dumps(
-                {"title": title.strip()[:100], "description": description.strip()[:2000],
-                 "package": info.package, "version_name": info.version_name,
-                 "version_code": info.version_code},
-                ensure_ascii=False,
-            )
-        )
-        project.title = project.title or title.strip()[:100]
-        project.description = project.description or description.strip()[:2000]
-        release = await _create_release(db, user, project, ProjectType.app, SourceKind.apk, str(apk_path), release_id)
+        (rdir / "meta.json").write_text(json.dumps(meta, ensure_ascii=False))
+        project.title = project.title or meta["title"]
+        project.description = project.description or meta["description"]
+        label = " + ".join(x for x, ok in (("APK", has_apk), ("TestFlight", "testflight_url" in meta), ("영상", has_video)) if ok)
+        # source_kind 'apk' 는 모바일 앱 릴리스 전체를 뜻한다 (이름은 예전 그대로)
+        release = await _create_release(db, user, project, ProjectType.app, SourceKind.apk, label, release_id)
     except v.ValidationError as e:
         shutil.rmtree(rdir, ignore_errors=True)
         await release_project_lock(user.student_no)
@@ -268,8 +281,8 @@ async def upload_app(
         shutil.rmtree(rdir, ignore_errors=True)
         await release_project_lock(user.student_no)
         raise
-    return {"release_id": str(release.id), "version": release.version, "package": info.package,
-            "version_name": info.version_name, "warnings": []}
+    return {"release_id": str(release.id), "version": release.version, "package": meta.get("package"),
+            "version_name": meta.get("version_name"), "warnings": []}
 
 
 # ---- 릴리스 ----

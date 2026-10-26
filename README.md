@@ -1,7 +1,7 @@
 # science26-platform
 
 학생이 과학 프로젝트 결과물을 올리면 `science26.bssm.dev/students/{링크이름}/` 에 자동 배포되는 플랫폼.
-정적 웹, 풀스택(docker compose), 안드로이드 앱(APK 소개 페이지) 세 종류를 받는다.
+정적 웹, 풀스택(docker compose), 모바일 앱(APK·TestFlight 링크·시연 영상 소개 페이지) 세 종류를 받는다.
 
 ## 구성
 
@@ -55,7 +55,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 ## 운영 서버 E2E 테스트
 
-테스트 전용 계정(학번 9999)으로 실제 공개 주소에 정적 → 풀스택(`examples/fullstack-test`) → 중지·재시작 → 롤백 → (APK 가 있으면) 앱까지 올려 보고, 끝나면 프로젝트와 계정을 지운다.
+테스트 전용 계정(학번 9999)으로 실제 공개 주소에 정적 → 풀스택(`examples/fullstack-test`) → 중지·재시작 → 롤백 → 모바일 앱(TestFlight 링크·시연 영상, APK 는 있을 때만)까지 올려 보고, 끝나면 프로젝트와 계정을 지운다.
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm -v ./examples:/examples:ro worker python -m app.e2e

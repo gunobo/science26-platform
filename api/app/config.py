@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     max_fullstack_bytes: int = 200 * 1024 * 1024
     max_apk_bytes: int = 150 * 1024 * 1024
     max_image_bytes: int = 5 * 1024 * 1024
+    max_video_bytes: int = 100 * 1024 * 1024
     max_unpacked_bytes: int = 1024 * 1024 * 1024
     max_image_total_bytes: int = 2 * 1024 * 1024 * 1024
     build_timeout_seconds: int = 600

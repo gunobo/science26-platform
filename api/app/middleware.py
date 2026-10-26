@@ -16,7 +16,7 @@ CSRF_HEADER = b"x-s26-request"
 # 경로 → 허용 최대 본문 (바이트). 나머지 API 요청은 DEFAULT_MAX.
 UPLOAD_LIMITS = {
     "/api/v1/projects/me/releases": 210 * 1024 * 1024,
-    "/api/v1/projects/me/app": 185 * 1024 * 1024,
+    "/api/v1/projects/me/app": 290 * 1024 * 1024,  # APK 150 + 영상 100 + 스크린샷 25 + 여유
     "/api/v1/projects/me": 8 * 1024 * 1024,  # 썸네일
     "/api/v1/admin/users/import": 2 * 1024 * 1024,
 }

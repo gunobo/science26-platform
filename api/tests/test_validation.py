@@ -292,3 +292,65 @@ def test_redis_acl_key_patterns_not_reset_afterwards():
     chan_at = args.index("&stu_1411:*")
     assert all(a not in ("resetkeys", "resetchannels", "reset") for a in args[key_at:])
     assert args.index("reset") < min(key_at, chan_at)
+
+
+@pytest.mark.parametrize("url,ok", [
+    ("https://testflight.apple.com/join/AbC123xy", True),
+    ("https://testflight.apple.com/join/AbC123xy/", True),
+    ("http://testflight.apple.com/join/AbC123xy", False),
+    ("https://evil.com/join/AbC123xy", False),
+    ("https://testflight.apple.com/join/a\"onmouseover=x", False),
+])
+def test_check_testflight(url, ok):
+    if ok:
+        assert v.check_testflight(url).startswith("https://testflight.apple.com/join/")
+    else:
+        with pytest.raises(v.ValidationError):
+            v.check_testflight(url)
+
+
+def test_check_video(tmp_path):
+    mp4 = tmp_path / "a"
+    mp4.write_bytes(b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 20)
+    assert v.check_video("demo.MP4", mp4) == ".mp4"
+    webm = tmp_path / "b"
+    webm.write_bytes(b"\x1a\x45\xdf\xa3" + b"\x00" * 20)
+    assert v.check_video("x.webm", webm) == ".webm"
+    fake = tmp_path / "c"
+    fake.write_bytes(b"<html>not a video</html>")
+    with pytest.raises(v.ValidationError):
+        v.check_video("x.mp4", fake)
+    with pytest.raises(v.ValidationError):
+        v.check_video("x.avi", mp4)
+
+
+def _app_release(tmp_path, meta, apk=False, video=None):
+    import json as _json
+    rd = tmp_path / "rel"
+    (rd / "shots").mkdir(parents=True)
+    (rd / "shots" / "1.png").write_bytes(b"png")
+    if apk:
+        (rd / "app.apk").write_bytes(b"apk")
+    if video:
+        (rd / video).write_bytes(b"vid")
+    (rd / "meta.json").write_text(_json.dumps({"title": "앱", "description": "설명", **meta}))
+    return rd
+
+
+def test_app_page_ios_only(tmp_path):
+    from app.services.app_page import build_site
+
+    rd = _app_release(tmp_path, {"testflight_url": "https://testflight.apple.com/join/AbC123xy", "video": "demo.mp4"}, video="demo.mp4")
+    build_site(rd, tmp_path / "site", "https://h/students/x/")
+    html = (tmp_path / "site" / "index.html").read_text()
+    assert "TestFlight로 설치" in html and "<video" in html and "APK 다운로드" not in html
+    assert (tmp_path / "site" / "demo.mp4").exists() and not (tmp_path / "site" / "app.apk").exists()
+
+
+def test_app_page_legacy_apk_only(tmp_path):
+    from app.services.app_page import build_site
+
+    rd = _app_release(tmp_path, {"package": "com.x", "version_name": "1.0"}, apk=True)
+    build_site(rd, tmp_path / "site", "https://h/students/x/")
+    html = (tmp_path / "site" / "index.html").read_text()
+    assert "APK 다운로드" in html and "TestFlight" not in html and "com.x · v1.0" in html
