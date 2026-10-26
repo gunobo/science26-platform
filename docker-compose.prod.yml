@@ -1,0 +1,31 @@
+# 운영(NCP) 전용 덮어쓰기: 443 포트, Let's Encrypt 자동 인증서, HTTP→HTTPS 리다이렉트.
+# docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+services:
+  traefik:
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=s26-edge
+      - --providers.docker.endpoint=tcp://docker-proxy:2375
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.websecure.http.tls.certresolver=le
+      - --entrypoints.internal.address=:8000
+      - --entrypoints.metrics.address=:8082
+      - --certificatesresolvers.le.acme.email=${ACME_EMAIL}
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.le.acme.httpchallenge.entrypoint=web
+      - --metrics.prometheus=true
+      - --metrics.prometheus.entrypoint=metrics
+      - --metrics.prometheus.addrouterslabels=true
+      - --accesslog=false
+      - --ping=true
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/traefik/dynamic:/etc/traefik/dynamic:ro
+      - ${DATA_ROOT:-./data}/letsencrypt:/letsencrypt

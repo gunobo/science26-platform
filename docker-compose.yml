@@ -19,6 +19,8 @@ services:
       - --providers.docker.endpoint=tcp://docker-proxy:2375
       - --providers.file.directory=/etc/traefik/dynamic
       - --entrypoints.web.address=:80
+      # 워커 헬스체크 전용 (외부 미노출, HTTPS 리다이렉트 없음)
+      - --entrypoints.internal.address=:8000
       - --entrypoints.metrics.address=:8082
       - --metrics.prometheus=true
       - --metrics.prometheus.entrypoint=metrics
@@ -141,16 +143,6 @@ services:
       - traefik.http.services.s26-web.loadbalancer.server.port=8080
       - traefik.http.routers.s26-web.rule=Host(`${UPLOAD_HOST}`) || (Host(`${PUBLIC_HOST}`) && !PathPrefix(`/students`))
       - traefik.http.routers.s26-web.priority=10
-    restart: unless-stopped
-
-  cloudflared:
-    image: cloudflare/cloudflared:2024.8.3
-    container_name: s26-cloudflared
-    command: tunnel --no-autoupdate run
-    environment:
-      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
-    networks: [edge]
-    profiles: [tunnel]
     restart: unless-stopped
 
 networks:

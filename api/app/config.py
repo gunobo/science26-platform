@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     student_redis_host: str = "redis"
     postgres_container: str = "s26-postgres"
     redis_container: str = "s26-redis"
-    traefik_url: str = "http://s26-traefik:80"
+    traefik_url: str = "http://s26-traefik:8000"  # internal 엔트리포인트
     traefik_metrics_url: str = "http://s26-traefik:8082/metrics"
     edge_network: str = "s26-edge"
 

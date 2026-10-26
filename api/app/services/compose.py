@@ -30,7 +30,10 @@ def traefik_labels(
     student_no: str, slug: str, version: int, seq: int, public_host: str, edge_network: str,
     port: int, *, api: bool = False,
 ) -> dict[str, str]:
-    """버전별 라우터. seq(배포할 때마다 증가)가 클수록 우선이라 새로 띄운 스택이 기동 즉시 트래픽을 받고,
+    """버전별 라우터. 엔트리포인트를 지정하지 않아 web·websecure·internal 모두에 붙는다
+    (TLS는 websecure 엔트리포인트 기본값으로 적용).
+
+    seq(배포할 때마다 증가)가 클수록 우선이라 새로 띄운 스택이 기동 즉시 트래픽을 받고,
     실패하면 그 스택만 내려서 이전 스택으로 돌아간다. 롤백으로 옛 버전을 띄울 때도 seq 는 새 값이다.
 
     라우터 이름은 학번 기준, 경로는 학생이 정한 링크 이름(slug) 기준.
@@ -42,7 +45,6 @@ def traefik_labels(
         "traefik.enable": "true",
         "traefik.docker.network": edge_network,
         f"traefik.http.routers.{name}.rule": f"Host(`{public_host}`) && PathPrefix(`{prefix}`)",
-        f"traefik.http.routers.{name}.entrypoints": "web",
         f"traefik.http.routers.{name}.priority": str(
             (API_PRIORITY_BASE if api else FRONT_PRIORITY_BASE) + seq
         ),

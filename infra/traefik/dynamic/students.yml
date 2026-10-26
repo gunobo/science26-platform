@@ -5,7 +5,6 @@ http:
     students-fallback:
       rule: "PathPrefix(`/students/`)"
       priority: 1
-      entryPoints: [web]
       service: s26-api@docker
       middlewares: [students-wake-rewrite]
   middlewares:

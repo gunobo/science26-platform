@@ -11,9 +11,8 @@
 | `api` | FastAPI, SQLAlchemy 2, Alembic | 인증, 업로드·검증, 프로젝트·관리자 API |
 | `worker` | 같은 코드 + arq | 빌드·배포·롤백·슬립·모니터링 |
 | `postgres` / `redis` | PostgreSQL 16 / Redis 7 | 플랫폼 메타데이터, 세션·큐 + 학생별 DB·ACL 계정 |
-| `traefik` | Traefik v3 | Docker 라벨 라우팅, 슬립·미배포 폴백 |
+| `traefik` | Traefik v3 | Docker 라벨 라우팅, Let's Encrypt HTTPS, 슬립·미배포 폴백 |
 | `docker-proxy` | docker-socket-proxy | 워커·Traefik만 Docker API 접근 (API 컨테이너엔 소켓 없음) |
-| `cloudflared` | Cloudflare Tunnel | 외부 HTTPS 인입 (`--profile tunnel`) |
 
 ```
 api/          FastAPI 앱, 워커, Alembic 마이그레이션, 테스트
@@ -25,16 +24,18 @@ scripts/      비밀값 생성, 백업(pg_dump → NCP Object Storage), 방화�
 ## 실행
 
 ```bash
-cp .env.example .env
-./scripts/gen-secrets.sh >> .env   # 생성된 값으로 빈 칸 채우기
-docker compose up -d --build                    # 로컬
-docker compose --profile tunnel up -d --build   # 운영 (Cloudflare Tunnel)
+# 로컬: http://upload.science26.localhost:8080 (대시보드), http://science26.localhost:8080 (공개 목록)
+./scripts/setup-local.sh
+docker compose up -d --build
+
+# 운영 (NCP 공인 IP + Let's Encrypt): docs/ncp-setup.md 참고
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
 - 구글 OAuth 리디렉트 URI: `https://{UPLOAD_HOST}/api/v1/auth/google/callback`
 - 관리자: `.env` 의 `ADMIN_EMAILS`. 학생은 관리자 화면에서 `email,학번,이름` CSV를 올려야 업로드 가능
 - 로컬 개발 로그인: api 에 `DEV_LOGIN=true` 를 주고 `localhost` 에서 접속하면 이메일만으로 로그인 (운영에서는 켜지 말 것)
-- 운영 서버 부팅 시 `scripts/firewall.sh` 로 학생 컨테이너의 내부 대역 접근 차단, cron 으로 `scripts/backup.sh` 일 1회
+- 운영 서버는 `scripts/server-setup.sh` 가 Docker 설치, `/data` 마운트, 방화벽(`scripts/firewall.sh`), 백업 cron(`scripts/backup.sh`)까지 세팅한다
 
 ## 배포 흐름
 
@@ -55,6 +56,8 @@ docker compose --profile tunnel up -d --build   # 운영 (Cloudflare Tunnel)
 - 강제 적용: 메모리 256MB(스택 합계 512MB), CPU 0.5, PIDs 128, `cap_drop: ALL`, `no-new-privileges`, `read_only` + `/tmp` tmpfs 64MB, `restart: on-failure:3`
 
 ## 명세서와 다른 점
+
+- **외부 인입**: Cloudflare Tunnel 대신 NCP 공인 IP + Traefik Let's Encrypt(HTTP-01). 헬스체크는 외부에 안 열린 `internal` 엔트리포인트(8000)로 한다
 
 - **링크 이름(slug)**: 학번 대신 학생이 정한 이름으로 링크가 열린다 (`/students/space-runner/`). 기본값은 학번, 바꾸면 자동 재배포, 학번 주소로 들어오면 새 주소로 리다이렉트. 컨테이너·DB 계정 등 내부 식별자는 계속 학번
 - **학생 DB 네트워크**: 공용 `data-net` 대신 학생별 `stu-{학번}-net` 에 postgres·redis 컨테이너를 별칭으로 붙인다. 학생 백엔드끼리 같은 네트워크를 공유하지 않게 하기 위함
