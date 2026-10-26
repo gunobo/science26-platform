@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>진자 실험실 · science26 배포 테스트</title>
+<style>
+  :root {
+    --bg: #f4f4f5; --surface: #fcfcfc; --border: #e4e4e7; --text: #18181b; --muted: #62626b;
+    --accent: #047857; --soft: #e3f4ec; --bob: #0f766e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f0f11; --surface: #18181b; --border: #2a2a2f; --text: #f2f2f3; --muted: #a1a1aa;
+            --accent: #34d399; --soft: #12302a; --bob: #5eead4; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 40px 20px 64px; }
+  h1 { font-size: clamp(28px, 5vw, 40px); letter-spacing: -1px; margin: 0 0 8px; }
+  p.lead { color: var(--muted); margin: 0 0 28px; line-height: 1.6; }
+  .grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 16px; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px; }
+  canvas { width: 100%; height: 340px; display: block; border-radius: 10px; background: var(--bg); }
+  label { display: block; font-size: 14px; font-weight: 600; margin: 14px 0 6px; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .val { float: right; color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .stat { font-size: 28px; font-weight: 800; letter-spacing: -0.5px; font-variant-numeric: tabular-nums; }
+  .small { font-size: 13px; color: var(--muted); }
+  button { margin-top: 16px; border: 0; border-radius: 10px; padding: 10px 16px; font-weight: 600;
+           background: var(--accent); color: var(--surface); cursor: pointer; font-size: 14px; }
+  button:active { transform: scale(0.98); }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; font-size: 14px; }
+  dt { color: var(--muted); }
+  dd { margin: 0; font-family: ui-monospace, Menlo, monospace; font-size: 13px; word-break: break-all; }
+  .ok { display: inline-block; background: var(--soft); color: var(--accent); border-radius: 999px;
+        padding: 3px 10px; font-size: 13px; font-weight: 700; margin-bottom: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <span class="ok">배포 성공</span>
+  <h1>진자 실험실</h1>
+  <p class="lead">줄 길이와 중력을 바꾸면 주기가 어떻게 달라지는지 확인해 보세요. 이 페이지가 보이면 science26 정적 배포가 정상이에요.</p>
+
+  <div class="grid">
+    <section class="card">
+      <canvas id="c" aria-label="진자 시뮬레이션"></canvas>
+      <label>줄 길이 <span class="val" id="lv"></span></label>
+      <input id="len" type="range" min="0.3" max="3" step="0.1" value="1.5">
+      <label>중력 가속도 <span class="val" id="gv"></span></label>
+      <input id="grav" type="range" min="1" max="25" step="0.1" value="9.8">
+      <button id="reset">다시 놓기</button>
+    </section>
+
+    <section class="card">
+      <div class="small">이론 주기 T = 2π√(L/g)</div>
+      <div class="stat" id="theory">-</div>
+      <div class="small" style="margin-top:14px">측정한 주기</div>
+      <div class="stat" id="measured">측정 중</div>
+      <div class="small" style="margin-top:14px">이 기기에서 다시 놓은 횟수 (localStorage)</div>
+      <div class="stat" id="count">0</div>
+
+      <hr style="border:0;border-top:1px solid var(--border);margin:20px 0">
+      <dl>
+        <dt>주소</dt><dd id="url"></dd>
+        <dt>경로</dt><dd id="path"></dd>
+        <dt>열린 시각</dt><dd id="time"></dd>
+      </dl>
+    </section>
+  </div>
+</main>
+
+<script>
+  // 외부 파일 없이 동작하는 단일 HTML. science26 정적 업로드(index.html 하나) 테스트용.
+  const $ = (id) => document.getElementById(id);
+  const canvas = $('c'), ctx = canvas.getContext('2d');
+  const len = $('len'), grav = $('grav');
+  // 같은 도메인의 다른 학생 페이지와 겹치지 않게 키 이름에 프로젝트 이름을 붙인다
+  const KEY = 'pendulum-lab:resets';
+
+  let theta = 0.6, omega = 0, lastCross = null, lastSign = 0;
+
+  function count(delta) {
+    let n = 0;
+    try { n = Number(localStorage.getItem(KEY) || 0) + delta; localStorage.setItem(KEY, n); } catch (e) {}
+    $('count').textContent = n;
+  }
+
+  function reset() { theta = 0.6; omega = 0; lastCross = null; lastSign = 0; $('measured').textContent = '측정 중'; }
+
+  function updateLabels() {
+    const L = +len.value, g = +grav.value;
+    $('lv').textContent = L.toFixed(1) + ' m';
+    $('gv').textContent = g.toFixed(1) + ' m/s²';
+    $('theory').textContent = (2 * Math.PI * Math.sqrt(L / g)).toFixed(2) + ' 초';
+  }
+
+  function resize() {
+    const r = canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    canvas.width = r.width * dpr; canvas.height = r.height * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  let prev = performance.now();
+  function frame(now) {
+    const dt = Math.min((now - prev) / 1000, 0.03); prev = now;
+    const L = +len.value, g = +grav.value;
+    for (let i = 0; i < 10; i++) {           // 작은 시간 간격으로 나눠 적분
+      const h = dt / 10;
+      omega += -(g / L) * Math.sin(theta) * h;
+      theta += omega * h;
+    }
+    // 오른쪽으로 지나가며 중심을 통과할 때마다 한 주기
+    const sign = Math.sign(theta);
+    if (lastSign < 0 && sign >= 0 && omega > 0) {
+      if (lastCross) $('measured').textContent = ((now - lastCross) / 1000).toFixed(2) + ' 초';
+      lastCross = now;
+    }
+    lastSign = sign;
+
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    const css = getComputedStyle(document.documentElement);
+    const scale = (h - 50) / 3.2, ox = w / 2, oy = 20;
+    const x = ox + Math.sin(theta) * L * scale, y = oy + Math.cos(theta) * L * scale;
+    ctx.clearRect(0, 0, w, h);
+    ctx.strokeStyle = css.getPropertyValue('--muted'); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(ox - 40, oy); ctx.lineTo(ox + 40, oy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(x, y); ctx.stroke();
+    ctx.fillStyle = css.getPropertyValue('--bob');
+    ctx.beginPath(); ctx.arc(x, y, 14, 0, Math.PI * 2); ctx.fill();
+    requestAnimationFrame(frame);
+  }
+
+  len.oninput = grav.oninput = () => { updateLabels(); reset(); };
+  $('reset').onclick = () => { reset(); count(1); };
+  window.addEventListener('resize', resize);
+
+  $('url').textContent = location.href;
+  $('path').textContent = location.pathname;
+  $('time').textContent = new Date().toLocaleString('ko-KR');
+  resize(); updateLabels(); count(0); requestAnimationFrame(frame);
+</script>
+</body>
+</html>

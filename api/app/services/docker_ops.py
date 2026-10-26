@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
@@ -12,12 +13,24 @@ class CommandError(Exception):
     pass
 
 
+# 워커 프로세스 환경에는 DB·Redis 관리자 비밀번호, SECRET_KEY 가 있다.
+# docker·git 에는 동작에 필요한 것만 넘겨서, 학생 파일이 어떤 식으로든 이 값을 읽지 못하게 한다.
+_PASS_ENV = ("PATH", "HOME", "DOCKER_HOST", "DOCKER_BUILDKIT", "LANG", "TZ")
+
+
+def clean_env() -> dict[str, str]:
+    env = {k: os.environ[k] for k in _PASS_ENV if k in os.environ}
+    env.setdefault("PATH", "/usr/local/bin:/usr/bin:/bin")
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    return env
+
+
 async def run(
     *args: str, sink: LineSink | None = None, timeout: float | None = None, cwd: Path | None = None
 ) -> str:
     """명령을 돌리고 stdout+stderr 를 줄 단위로 sink 에 흘린다. 실패하면 마지막 몇 줄로 CommandError."""
     proc = await asyncio.create_subprocess_exec(
-        *args, cwd=cwd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
+        *args, cwd=cwd, env=clean_env(), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
     )
     lines: list[str] = []
 

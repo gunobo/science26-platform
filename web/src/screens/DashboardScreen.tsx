@@ -3,10 +3,10 @@ import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Linking, Pressable, ScrollView, Switch, Text, useWindowDimensions, View } from 'react-native';
 import {
   AndroidLogo, ArrowCounterClockwise, ArrowUpRight, Browser, ClockCounterClockwise, Copy, FileZip, GearSix,
-  GithubLogo, Image as ImageIcon, Key, Play, Plus, Stack, Stop, Terminal, Trash, UploadSimple,
+  GithubLogo, Image as ImageIcon, Key, Play, Plus, Robot, Stack, Stop, Terminal, Trash, UploadSimple,
 } from '@phosphor-icons/react';
 
-import { API_BASE, api, ApiError, json, Project, ProjectType, Release, Warning } from '../api';
+import { API_BASE, api, ApiError, json, Project, ProjectType, PUBLIC_HOST, Release, Warning } from '../api';
 import { font, radius, useTheme } from '../theme';
 import { Badge, Button, Card, Field, FilePick, Notice, Segmented, Skeleton, T } from '../ui';
 
@@ -48,6 +48,7 @@ export default function DashboardScreen() {
 
   const main = (
     <>
+      <AiHelpCard slug={project.slug} />
       <UploadCard disabled={busy} onUploaded={(id) => { setWatching(id); refresh(); }} />
       {watching && <BuildLogCard releaseId={watching} onDone={refresh} />}
       {project.active_release && <RuntimeCard project={project} onChange={refresh} />}
@@ -112,6 +113,110 @@ function Hero({ project }: { project: Project }) {
       ) : (
         <T>아직 배포된 버전이 없어요. 아래에서 결과물을 올리면 몇십 초 안에 내 페이지가 생겨요.</T>
       )}
+    </View>
+  );
+}
+
+// ---- AI 코딩 도구로 배포 준비 ----
+
+type AiType = 'auto' | ProjectType;
+const AI_TYPE_TEXT: Record<AiType, string> = {
+  auto: '어떤 타입(정적 웹, 풀스택, 앱)이 맞는지 먼저 골라 주고',
+  static: '정적 웹 타입으로',
+  fullstack: '풀스택(docker compose) 타입으로',
+  app: '안드로이드 앱 타입으로',
+};
+
+function AiHelpCard({ slug }: { slug: string }) {
+  const t = useTheme();
+  const [open, setOpen] = useState(false);
+  const [type, setType] = useState<AiType>('auto');
+  const base = `https://${PUBLIC_HOST}/ai`;
+  const download = `curl -fsSLO ${base}/AGENTS.md && curl -fsSLO ${base}/CLAUDE.md`;
+  const prompt =
+    `이 프로젝트를 science26 에 배포하려고 해. AGENTS.md 의 규칙을 꼼꼼히 읽고 ${AI_TYPE_TEXT[type]} 배포할 수 있게 고쳐 줘. ` +
+    `내 링크 이름은 ${slug} 이고 주소는 https://${PUBLIC_HOST}/students/${slug}/ 야. ` +
+    `필요하면 빌드까지 해서 올릴 zip 을 만들어 주고, 끝나면 AGENTS.md 마지막 항목대로 무엇을 어떻게 올리면 되는지 알려 줘.`;
+
+  return (
+    <Card
+      title="AI로 배포 준비하기"
+      icon={Robot}
+      right={<Button label={open ? '접기' : '펼치기'} kind="ghost" small onPress={() => setOpen(!open)} />}
+    >
+      <T variant="sub" style={{ marginBottom: open ? 16 : 0 }}>
+        Codex 나 Claude Code 에게 science26 규칙을 알려주면 경로 설정, docker-compose 작성까지 알아서 맞춰 줘요.
+      </T>
+      {open && (
+        <View style={{ gap: 4 }}>
+          <Step n={1} title="프로젝트 폴더에서 규칙 파일 받기">
+            <CopyBox text={download} />
+            <T variant="small">
+              Codex 는 AGENTS.md, Claude Code 는 CLAUDE.md 를 자동으로 읽어요. Windows PowerShell 에서는 curl 대신 curl.exe 로 쓰세요.{' '}
+              <Text style={{ color: t.accent, fontWeight: '600' }} onPress={() => window.open(`${base}/AGENTS.md`, '_blank')}>
+                규칙 내용 보기
+              </Text>
+            </T>
+          </Step>
+          <Step n={2} title="AI 에게 이렇게 말하기">
+            <Segmented
+              value={type}
+              onChange={setType}
+              options={[
+                { value: 'auto', label: 'AI가 고르기' },
+                { value: 'static', label: '정적 웹' },
+                { value: 'fullstack', label: '풀스택' },
+                { value: 'app', label: '앱' },
+              ]}
+            />
+            <CopyBox text={prompt} wrap />
+          </Step>
+          <Step n={3} title="AI 가 알려준 파일이나 저장소를 아래에서 올리기" last>
+            <T variant="small">API 키 같은 비밀값은 AI 에게 주지 말고, 배포 후 환경변수 칸에 직접 넣으세요.</T>
+          </Step>
+        </View>
+      )}
+    </Card>
+  );
+}
+
+function Step({ n, title, children, last }: { n: number; title: string; children: ReactNode; last?: boolean }) {
+  const t = useTheme();
+  return (
+    <View style={{ flexDirection: 'row', gap: 12 }}>
+      <View style={{ alignItems: 'center' }}>
+        <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: t.accentSoft, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ fontFamily: font.family, fontWeight: '800', fontSize: 13, color: t.accent }}>{n}</Text>
+        </View>
+        {!last && <View style={{ width: 2, flex: 1, backgroundColor: t.border, marginVertical: 4 }} />}
+      </View>
+      <View style={{ flex: 1, minWidth: 0, paddingBottom: last ? 0 : 18, gap: 8 }}>
+        <T variant="heading" style={{ fontSize: 15, marginTop: 2 }}>{title}</T>
+        {children}
+      </View>
+    </View>
+  );
+}
+
+function CopyBox({ text, wrap }: { text: string; wrap?: boolean }) {
+  const t = useTheme();
+  const [copied, setCopied] = useState(false);
+  return (
+    <View style={{ backgroundColor: t.logBg, borderRadius: radius.control, padding: 12, gap: 10 }}>
+      <T variant="mono" numberOfLines={wrap ? undefined : 1} style={{ color: t.logText }}>{text}</T>
+      <View style={{ alignSelf: 'flex-end' }}>
+        <Button
+          label={copied ? '복사됨' : '복사'}
+          kind="secondary"
+          small
+          icon={Copy}
+          onPress={() => {
+            navigator.clipboard?.writeText(text);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          }}
+        />
+      </View>
     </View>
   );
 }

@@ -10,6 +10,29 @@ from app.services.validation import ComposeSpec, _labels
 # 학생이 붙인 traefik 라벨은 모두 버리고 플랫폼이 만든 것만 쓴다.
 _KEEP_KEYS = ("command", "expose", "depends_on", "healthcheck")
 
+
+def _walk(obj, fn):
+    if isinstance(obj, str):
+        return fn(obj)
+    if isinstance(obj, dict):
+        return {_walk(k, fn): _walk(v, fn) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_walk(v, fn) for v in obj]
+    return obj
+
+
+def _student_literal(obj):
+    """학생 compose 의 문자열을 compose 규칙대로 해석한 '실제 값'으로 바꾼다 ($$ → $).
+
+    ${VAR} 치환은 지원하지 않고 글자 그대로 둔다. 치환을 허용하면 워커 환경의 비밀값이 새어 나갈 수 있다.
+    """
+    return _walk(obj, lambda s: s.replace("$$", "$"))
+
+
+def escape_interpolation(spec: dict) -> dict:
+    """compose 파일에 쓰기 직전에 모든 $ 를 $$ 로 바꿔 docker compose 가 변수 치환을 하지 않게 한다."""
+    return _walk(spec, lambda s: s.replace("$", "$$"))
+
 FRONT_PRIORITY_BASE = 1_000
 API_PRIORITY_BASE = 1_000_000
 
@@ -108,6 +131,7 @@ def rewrite(
     per_service_mb = min(memory_mb, stack_memory_mb // len(spec.services))
     services = {}
     for name, svc in spec.services.items():
+        svc = _student_literal(svc)
         out: dict = {k: svc[k] for k in _KEEP_KEYS if k in svc}
 
         if "build" in svc:

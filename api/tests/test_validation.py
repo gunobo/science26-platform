@@ -231,3 +231,32 @@ def test_login_allowlist(monkeypatch):
         assert not is_allowed("s1@bssm.hs.kr", None)  # hd 없는 계정은 학교 계정이 아님
     finally:
         get_settings.cache_clear()
+
+
+def test_escape_interpolation_static_labels():
+    from app.services.compose import escape_interpolation
+
+    spec = static_compose(student_no="1411", slug="game", version=1, seq=1, context=Path("/tmp"),
+                          public_host="h", edge_network="e", memory_mb=256, cpus=0.5, pids=128)
+    out = escape_interpolation(spec)
+    labels = out["services"]["web"]["labels"]
+    assert labels["traefik.http.middlewares.stu-1411-v1-slash.redirectregex.replacement"] == "$${1}/"
+
+
+def test_student_values_never_interpolate(tmp_path):
+    from app.services.compose import escape_interpolation
+
+    compose = {"services": {"web": {"image": "node:20", "labels": ["science26.public=true"],
+               "environment": {"LEAK": "${SECRET_KEY}", "PRICE": "$$5"},
+               "command": ["sh", "-c", "echo $$HOME"]}}}
+    root = _project(tmp_path, compose)
+    spec = v.parse_compose((root / "docker-compose.yml").read_text(), root)
+    out = escape_interpolation(rewrite(
+        spec, root=root, student_no="1411", slug="x", version=1, seq=1, env={"PW": "a$b"},
+        public_host="h", edge_network="e", memory_mb=256, stack_memory_mb=512, cpus=0.5, pids=128))
+    web = out["services"]["web"]
+    # compose 가 다시 해석하면: ${SECRET_KEY} 는 글자 그대로, $$5 는 $5, $$HOME 은 $HOME, a$b 는 그대로
+    assert web["environment"]["LEAK"] == "$${SECRET_KEY}"
+    assert web["environment"]["PRICE"] == "$$5"
+    assert web["environment"]["PW"] == "a$$b"
+    assert web["command"] == ["sh", "-c", "echo $$HOME"]

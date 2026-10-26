@@ -9,3 +9,7 @@ web/dist/
 .expo/
 .DS_Store
 *.egg-info/
+
+# 학생 명단 (개인정보라 저장소에 올리지 않음)
+students*.csv
+students*.xlsx

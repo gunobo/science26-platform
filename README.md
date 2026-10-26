@@ -45,6 +45,14 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 4. 워커: `validating → building → deploying → active`. 빌드 로그는 SSE로 실시간 표시
 5. 새 스택(`stu-{학번}-v{버전}`)을 띄우고 Traefik 경유 헬스체크 통과 시 이전 스택 제거. 실패하면 새 스택만 내리고 이전 버전이 계속 서빙
 
+## AI 코딩 도구로 배포 준비
+
+`web/public/ai/AGENTS.md` (Codex) 와 `CLAUDE.md` (Claude Code) 가 `https://science26.bssm.dev/ai/` 에서 제공된다.
+학생 대시보드의 "AI로 배포 준비하기" 카드에서 받는 명령과 학생 링크 이름이 들어간 프롬프트를 복사할 수 있다.
+배포 규칙이 바뀌면 이 문서도 같이 고친다.
+
+`examples/static-test/index.html` 은 정적 업로드 테스트용 단일 HTML 이다.
+
 ## 학생 풀스택 compose 규칙
 
 - 루트에 `docker-compose.yml`, 서비스 최대 3개

@@ -24,7 +24,8 @@ from app.services import buildlog, docker_ops as d, provision
 from app.services import validation as v
 from app.services.app_page import build_site
 from app.services.compose import (
-    STATIC_DOCKERFILE, STATIC_NGINX_CONF, network_name, project_name, rewrite, static_compose,
+    STATIC_DOCKERFILE, STATIC_NGINX_CONF, escape_interpolation, network_name, project_name, rewrite,
+    static_compose,
 )
 from app.services.projects import base_path, student_url
 
@@ -200,7 +201,7 @@ async def deploy(release_id: str, *, build: bool) -> None:
 
             seq = await redis.incr(f"deployseq:{project.student_no}")
             spec = await compose_for(db, project, release, root, seq, emit)
-            compose_file.write_text(yaml.safe_dump(spec, allow_unicode=True, sort_keys=False))
+            compose_file.write_text(yaml.safe_dump(escape_interpolation(spec), allow_unicode=True, sort_keys=False))
 
             if build:
                 await set_state(ReleaseState.building)
