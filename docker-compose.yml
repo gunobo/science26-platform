@@ -1,0 +1,164 @@
+# science26 플랫폼 스택. 학생 스택은 워커가 stu-{학번}-v{버전} 프로젝트로 따로 띄운다.
+name: science26
+
+x-app-env: &app-env
+  env_file: .env
+  environment:
+    DATA_DIR: /data
+    DATABASE_URL: postgresql+asyncpg://science26:${POSTGRES_PASSWORD}@postgres:5432/science26
+    REDIS_URL: redis://default:${REDIS_PASSWORD}@redis:6379/0
+
+services:
+  traefik:
+    image: traefik:v3.1
+    container_name: s26-traefik
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=s26-edge
+      - --providers.docker.endpoint=tcp://docker-proxy:2375
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --entrypoints.web.address=:80
+      - --entrypoints.metrics.address=:8082
+      - --metrics.prometheus=true
+      - --metrics.prometheus.entrypoint=metrics
+      - --metrics.prometheus.addrouterslabels=true
+      - --accesslog=false
+      - --ping=true
+    ports:
+      - "${TRAEFIK_HTTP_PORT:-80}:80"
+    volumes:
+      - ./infra/traefik/dynamic:/etc/traefik/dynamic:ro
+    networks: [edge, proxy]
+    depends_on: [docker-proxy]
+    restart: unless-stopped
+
+  # 워커·Traefik만 이 프록시를 통해 Docker API에 접근한다. API 컨테이너는 접근 불가.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:0.2
+    container_name: s26-docker-proxy
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      NETWORKS: 1
+      VOLUMES: 1
+      BUILD: 1
+      SESSION: 1
+      GRPC: 1
+      INFO: 1
+      VERSION: 1
+      DISTRIBUTION: 1
+      EVENTS: 1
+      EXEC: 0
+      POST: 1
+      DELETE: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [proxy]
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: s26-postgres
+    environment:
+      POSTGRES_USER: science26
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: science26
+    volumes:
+      - ${DATA_ROOT:-./data}/postgres:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U science26"]
+      interval: 5s
+      retries: 10
+    networks: [platform]
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: s26-redis
+    entrypoint: ["/bin/sh", "/s26/redis-entrypoint.sh"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - ${DATA_ROOT:-./data}/redis:/data
+      - ./infra/redis:/s26:ro
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep PONG"]
+      interval: 5s
+      retries: 10
+    networks: [platform]
+    restart: unless-stopped
+
+  api:
+    build: ./api
+    image: s26/platform-api:latest
+    container_name: s26-api
+    <<: *app-env
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"]
+    volumes:
+      - ${DATA_ROOT:-./data}/files:/data
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    networks: [platform, edge]
+    labels:
+      - traefik.enable=true
+      - traefik.http.services.s26-api.loadbalancer.server.port=8000
+      - traefik.http.routers.s26-api.rule=Host(`${UPLOAD_HOST}`) && PathPrefix(`/api`)
+      - traefik.http.routers.s26-api.priority=100
+    restart: unless-stopped
+
+  worker:
+    image: s26/platform-api:latest
+    container_name: s26-worker
+    <<: *app-env
+    command: ["arq", "app.worker.WorkerSettings"]
+    environment:
+      DATA_DIR: /data
+      DATABASE_URL: postgresql+asyncpg://science26:${POSTGRES_PASSWORD}@postgres:5432/science26
+      REDIS_URL: redis://default:${REDIS_PASSWORD}@redis:6379/0
+      DOCKER_HOST: tcp://docker-proxy:2375
+    volumes:
+      # 워커가 docker CLI로 빌드 컨텍스트를 읽으므로 api와 같은 /data를 공유한다.
+      - ${DATA_ROOT:-./data}/files:/data
+    depends_on:
+      api: { condition: service_started }
+    networks: [platform, edge, proxy]
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      args:
+        UPLOAD_HOST: ${UPLOAD_HOST}
+        PUBLIC_HOST: ${PUBLIC_HOST}
+    image: s26/platform-web:latest
+    container_name: s26-web
+    networks: [edge]
+    labels:
+      - traefik.enable=true
+      - traefik.http.services.s26-web.loadbalancer.server.port=8080
+      - traefik.http.routers.s26-web.rule=Host(`${UPLOAD_HOST}`) || (Host(`${PUBLIC_HOST}`) && !PathPrefix(`/students`))
+      - traefik.http.routers.s26-web.priority=10
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:2024.8.3
+    container_name: s26-cloudflared
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    networks: [edge]
+    profiles: [tunnel]
+    restart: unless-stopped
+
+networks:
+  platform:
+    name: s26-platform
+  # Traefik ↔ 각 학생 스택의 공개 서비스
+  edge:
+    name: s26-edge
+  proxy:
+    name: s26-proxy
+    internal: true

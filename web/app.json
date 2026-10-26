@@ -1,0 +1,9 @@
+{
+  "expo": {
+    "name": "science26",
+    "slug": "science26",
+    "version": "0.1.0",
+    "platforms": ["web", "ios", "android"],
+    "web": { "bundler": "metro", "output": "single", "favicon": "./assets/favicon.png" }
+  }
+}
