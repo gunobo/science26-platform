@@ -63,17 +63,9 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 - 작은 서버에서는 `.env` 에 `CONCURRENT_BUILDS=1`, `RELEASES_KEPT=2` 추가 권장
 - 첫 접속 시 인증서 발급에 수십 초 걸릴 수 있다
 
-## 7. 백업 (선택)
+## 7. 백업
 
-Object Storage 버킷과 API 인증키를 만든 뒤 `/etc/science26-backup.env`:
-
-```
-NCP_ACCESS_KEY=...
-NCP_SECRET_KEY=...
-BACKUP_BUCKET=science26-backup
-```
-
-매일 04:00 에 `pg_dumpall` 결과를 올리고 7일 지난 것은 지운다.
+[backup.md](backup.md) 참고. 버킷·인증키를 만들고 `/etc/science26-backup.env` 를 쓰면 매일 04:00 에 자동으로 돈다.
 
 ## 업데이트
 

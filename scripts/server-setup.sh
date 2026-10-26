@@ -79,7 +79,7 @@ systemctl enable --now science26-firewall.service
 
 echo "== 백업 cron (매일 04:00, /etc/science26-backup.env 필요)"
 cat > /etc/cron.d/science26-backup <<EOF
-0 4 * * * root [ -f /etc/science26-backup.env ] && set -a && . /etc/science26-backup.env && set +a && /bin/bash $APP_DIR/scripts/backup.sh >> /var/log/science26-backup.log 2>&1
+0 4 * * * root [ -f /etc/science26-backup.env ] && /bin/bash $APP_DIR/scripts/backup.sh >> /var/log/science26-backup.log 2>&1
 EOF
 
 cat <<EOF

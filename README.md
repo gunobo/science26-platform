@@ -35,7 +35,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 - 구글 OAuth 리디렉트 URI: `https://{UPLOAD_HOST}/api/v1/auth/google/callback`
 - 관리자: `.env` 의 `ADMIN_EMAILS`. 학생은 관리자 화면에서 `email,학번,이름` CSV를 올려야 업로드 가능
 - 로컬 개발 로그인: api 에 `DEV_LOGIN=true` 를 주고 `localhost` 에서 접속하면 이메일만으로 로그인 (운영에서는 켜지 말 것)
-- 운영 서버는 `scripts/server-setup.sh` 가 Docker 설치, `/data` 마운트, 방화벽(`scripts/firewall.sh`), 백업 cron(`scripts/backup.sh`)까지 세팅한다
+- 운영 서버는 `scripts/server-setup.sh` 가 Docker 설치, `/data` 마운트, 방화벽(`scripts/firewall.sh`), 백업 cron(`scripts/backup.sh`, 설정·복구는 `docs/backup.md`)까지 세팅한다
 
 ## 배포 흐름
 
