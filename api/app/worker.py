@@ -173,13 +173,17 @@ async def migrate_student_redis() -> None:
             log.exception("학생 Redis 이전 실패 %s", net)
 
 
-async def image_total_bytes(compose_file: Path, project: str) -> int:
-    out = await d.run(*d.compose(project, compose_file, "images", "--format", "json"))
-    try:
-        images = json.loads(out or "[]")
-    except json.JSONDecodeError:
-        return 0
-    return sum(int(i.get("Size", 0)) for i in images)
+async def image_total_bytes(spec: dict) -> int:
+    """빌드한 이미지 용량 합계. (`docker compose images` 는 컨테이너가 떠 있어야 결과가 나와서 쓰지 않는다)"""
+    total = 0
+    for svc in spec["services"].values():
+        if "build" not in svc:
+            continue  # 공식 이미지는 아직 받기 전일 수 있고, 학생이 키울 수 있는 건 빌드 이미지뿐
+        try:
+            total += int((await d.run("docker", "image", "inspect", "--format", "{{.Size}}", svc["image"])).strip() or 0)
+        except (d.CommandError, ValueError):
+            pass
+    return total
 
 
 async def healthcheck(slug: str, emit) -> None:
@@ -235,7 +239,7 @@ async def deploy(release_id: str, *, build: bool) -> None:
                 await emit(f"$ docker compose build ({pname})")
                 await d.run(*d.compose(pname, compose_file, "build", "--pull"), sink=emit, timeout=s.build_timeout_seconds)
                 if release.type == ProjectType.fullstack:
-                    total = await image_total_bytes(compose_file, pname)
+                    total = await image_total_bytes(spec)
                     if total > s.max_image_total_bytes:
                         raise DeployError(f"이미지 합계가 2GB를 넘습니다 ({total // 1024 // 1024}MB)")
 

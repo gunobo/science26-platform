@@ -61,7 +61,8 @@ def compose(project: str, file: Path, *args: str) -> tuple[str, ...]:
 async def list_projects(prefix: str) -> list[dict]:
     """docker compose ls (중지된 것 포함) 중 이름이 prefix 로 시작하는 것."""
     out = await run("docker", "compose", "ls", "-a", "--format", "json")
-    return [p for p in json.loads(out or "[]") if p["Name"].startswith(prefix)]
+    # 결과가 없으면 [] 대신 null 을 줄 때가 있다
+    return [p for p in (json.loads(out or "[]") or []) if p["Name"].startswith(prefix)]
 
 
 async def down_project(project: str) -> None:

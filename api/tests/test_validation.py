@@ -260,3 +260,25 @@ def test_student_values_never_interpolate(tmp_path):
     assert web["environment"]["PRICE"] == "$$5"
     assert web["environment"]["PW"] == "a$$b"
     assert web["command"] == ["sh", "-c", "echo $$HOME"]
+
+
+async def test_image_total_bytes_counts_only_built_images(monkeypatch):
+    from app import worker
+    from app.services import docker_ops as d
+
+    calls = []
+
+    async def fake_run(*args, **kw):
+        calls.append(args[-1])
+        if args[-1] == "s26/stu-1411-api:v2":
+            raise d.CommandError("no such image")
+        return "1048576\n"
+
+    monkeypatch.setattr(d, "run", fake_run)
+    spec = {"services": {
+        "web": {"build": {"context": "/x"}, "image": "s26/stu-1411-web:v2"},
+        "api": {"build": {"context": "/y"}, "image": "s26/stu-1411-api:v2"},
+        "cache": {"image": "nginx:1.27"},
+    }}
+    assert await worker.image_total_bytes(spec) == 1048576
+    assert "nginx:1.27" not in calls
