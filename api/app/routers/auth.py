@@ -24,6 +24,12 @@ GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN = "https://oauth2.googleapis.com/token"
 
 
+def is_allowed(email: str, hd: str | None) -> bool:
+    """학교 Workspace 계정(hd 클레임) 또는 ADMIN_EMAILS 에 있는 계정만 통과."""
+    s = get_settings()
+    return (hd or "").lower() in s.allowed_domain_set or email.lower() in s.admin_email_set
+
+
 def _redirect_uri() -> str:
     return f"{get_settings().upload_url}/api/v1/auth/google/callback"
 
@@ -69,7 +75,10 @@ async def google_login():
         "state": state,
         "prompt": "select_account",
     }
-    if len(s.allowed_domain_set) == 1:
+    # 관리자 중 학교 밖 계정(예: 개인 Gmail)이 있으면 hd 힌트를 빼야 계정 선택 화면에서 고를 수 있다
+    if len(s.allowed_domain_set) == 1 and all(
+        e.rsplit("@", 1)[-1] in s.allowed_domain_set for e in s.admin_email_set
+    ):
         params["hd"] = next(iter(s.allowed_domain_set))
     return RedirectResponse(f"{GOOGLE_AUTH}?{urlencode(params)}")
 
@@ -109,7 +118,7 @@ async def google_callback(
         "https://accounts.google.com",
     ):
         return RedirectResponse("/?error=oauth")
-    if not claims.get("email_verified") or (claims.get("hd") or "").lower() not in s.allowed_domain_set:
+    if not claims.get("email_verified") or not is_allowed(claims.get("email", ""), claims.get("hd")):
         return RedirectResponse("/?error=domain")
 
     user = await _login_as(db, claims["email"], claims.get("name", ""))
@@ -129,8 +138,7 @@ async def dev_login(body: DevLogin, db: AsyncSession = Depends(get_db)):
     """로컬 개발 전용. DEV_LOGIN=true 일 때만 열린다."""
     if os.environ.get("DEV_LOGIN") != "true":
         raise forbidden()
-    domain = body.email.rsplit("@", 1)[-1].lower()
-    if domain not in get_settings().allowed_domain_set:
+    if not is_allowed(body.email, body.email.rsplit("@", 1)[-1]):
         raise APIError(403, "FORBIDDEN", "학교 계정만 로그인할 수 있습니다")
     user = await _login_as(db, body.email, body.name)
     sid = await create_session(user.id)

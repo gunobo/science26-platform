@@ -145,6 +145,13 @@ services:
       - traefik.http.services.s26-web.loadbalancer.server.port=8080
       - traefik.http.routers.s26-web.rule=Host(`${UPLOAD_HOST}`) || (Host(`${PUBLIC_HOST}`) && !PathPrefix(`/students`))
       - traefik.http.routers.s26-web.priority=10
+      # science26.bssm.dev/upload → 대시보드. 사람은 공개 도메인 하나만 기억하면 된다.
+      - traefik.http.routers.s26-upload-redirect.rule=Host(`${PUBLIC_HOST}`) && (Path(`/upload`) || PathPrefix(`/upload/`) || Path(`/login`) || Path(`/admin`))
+      - traefik.http.routers.s26-upload-redirect.priority=50
+      - traefik.http.routers.s26-upload-redirect.service=noop@internal
+      - traefik.http.routers.s26-upload-redirect.middlewares=s26-to-upload
+      - traefik.http.middlewares.s26-to-upload.redirectregex.regex=^https?://[^/]+/.*
+      - traefik.http.middlewares.s26-to-upload.redirectregex.replacement=https://${UPLOAD_HOST}/
     restart: unless-stopped
 
 networks:

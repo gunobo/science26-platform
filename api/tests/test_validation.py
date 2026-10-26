@@ -215,3 +215,19 @@ def test_inspect_apk_unsigned(tmp_path):
     z = make_zip(tmp_path / "a.apk", {"AndroidManifest.xml": "x", "classes.dex": "x"})
     with pytest.raises(v.ValidationError, match="서명"):
         v.inspect_apk(z)
+
+
+def test_login_allowlist(monkeypatch):
+    from app.config import get_settings
+    from app.routers.auth import is_allowed
+
+    monkeypatch.setenv("ALLOWED_GOOGLE_DOMAINS", "bssm.hs.kr")
+    monkeypatch.setenv("ADMIN_EMAILS", "Teacher@Gmail.com")
+    get_settings.cache_clear()
+    try:
+        assert is_allowed("s1@bssm.hs.kr", "bssm.hs.kr")
+        assert is_allowed("teacher@gmail.com", None)
+        assert not is_allowed("someone@gmail.com", None)
+        assert not is_allowed("s1@bssm.hs.kr", None)  # hd 없는 계정은 학교 계정이 아님
+    finally:
+        get_settings.cache_clear()

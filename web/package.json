@@ -6,10 +6,11 @@
   "scripts": {
     "start": "expo start --web",
     "build": "expo export -p web",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "node --stack-size=8000 node_modules/typescript/bin/tsc --noEmit"
   },
   "dependencies": {
     "@expo/metro-runtime": "~5.0.4",
+    "@phosphor-icons/react": "^2.1.10",
     "expo": "~53.0.0",
     "expo-document-picker": "~13.1.0",
     "expo-status-bar": "~2.2.0",

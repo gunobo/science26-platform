@@ -1,9 +1,11 @@
 import * as DocumentPicker from 'expo-document-picker';
-import { useCallback, useEffect, useState } from 'react';
-import { Linking, Pressable, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Linking, Pressable, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { ArrowsClockwise, ClipboardText, FileCsv, MagnifyingGlass, Sliders, Stop, Trash, UsersThree } from '@phosphor-icons/react';
 
 import { api, json, Project } from '../api';
-import { Badge, Button, c, Card, Field, Notice, s } from '../ui';
+import { font, radius, useTheme } from '../theme';
+import { Badge, Button, Card, Field, FilePick, Notice, Skeleton, T } from '../ui';
 
 type AdminProject = Project & {
   owner: { email: string; name: string };
@@ -14,31 +16,51 @@ type Settings = { upload_deadline: string | null; memory_mb: number; stack_memor
 const mb = (b?: number) => (b == null ? '-' : `${Math.round(b / 1024 / 1024)}MB`);
 
 export default function AdminScreen() {
+  const { width } = useWindowDimensions();
+  const wide = width >= 980;
   return (
     <View>
       <ProjectsCard />
-      <ImportCard />
-      <SettingsCard />
-      <AuditCard />
+      <View style={{ flexDirection: wide ? 'row' : 'column', gap: wide ? 20 : 0, alignItems: 'flex-start' }}>
+        <View style={{ flex: 1, minWidth: 0, width: wide ? undefined : '100%' }}>
+          <ImportCard />
+          <AuditCard />
+        </View>
+        <View style={{ flex: 1, minWidth: 0, width: wide ? undefined : '100%' }}>
+          <SettingsCard />
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: number }) {
+  const t = useTheme();
+  return (
+    <View style={{ minWidth: 96 }}>
+      <Text style={{ fontFamily: font.family, fontSize: 28, fontWeight: '800', letterSpacing: -0.8, color: t.text }}>{value}</Text>
+      <T variant="small">{label}</T>
     </View>
   );
 }
 
 function ProjectsCard() {
+  const t = useTheme();
   const [rows, setRows] = useState<AdminProject[] | null>(null);
   const [error, setError] = useState('');
+  const [query, setQuery] = useState('');
 
   const load = useCallback(() => {
     api<AdminProject[]>('/admin/projects').then(setRows).catch((e) => setError(e.message));
   }, []);
   useEffect(() => {
     load();
-    const t = setInterval(load, 15000);
-    return () => clearInterval(t);
+    const id = setInterval(load, 15000);
+    return () => clearInterval(id);
   }, [load]);
 
   const act = async (p: AdminProject, kind: 'stop' | 'delete') => {
-    if (kind === 'delete' && !window.confirm(`${p.student_no} 의 스택·DB·파일을 모두 삭제할까요? 되돌릴 수 없어요.`)) return;
+    if (kind === 'delete' && !window.confirm(`${p.student_no} ${p.owner.name} 학생의 스택, DB, 파일을 모두 삭제할까요? 되돌릴 수 없어요.`)) return;
     try {
       await api(kind === 'stop' ? `/admin/projects/${p.student_no}/stop` : `/admin/projects/${p.student_no}`, { method: kind === 'stop' ? 'POST' : 'DELETE' });
       setTimeout(load, 2000);
@@ -47,43 +69,64 @@ function ProjectsCard() {
     }
   };
 
-  const counts = rows?.reduce<Record<string, number>>((acc, p) => ({ ...acc, [p.status]: (acc[p.status] || 0) + 1 }), {});
+  const count = (s: string) => rows?.filter((p) => p.status === s).length ?? 0;
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return rows?.filter((p) => !q || [p.student_no, p.owner.name, p.title, p.slug].some((v) => v?.toLowerCase().includes(q)));
+  }, [rows, query]);
+
   return (
-    <Card title="전체 프로젝트" right={<Button label="새로고침" kind="ghost" small onPress={load} />}>
+    <Card title="전체 프로젝트" icon={UsersThree} right={<Button label="새로고침" kind="ghost" small icon={ArrowsClockwise} onPress={load} />}>
       {error ? <Notice kind="error" text={error} /> : null}
-      {counts && (
-        <Text style={[s.muted, { marginBottom: 10 }]}>
-          총 {rows!.length}개 · {Object.entries(counts).map(([k, v]) => `${k} ${v}`).join(' · ')}
-        </Text>
-      )}
-      {rows?.map((p) => (
-        <View key={p.student_no} style={{ paddingVertical: 10, borderTopWidth: 1, borderTopColor: c.border }}>
-          <View style={s.row}>
-            <Text style={{ fontWeight: '700', width: 48, color: c.text }}>{p.student_no}</Text>
-            <Text style={{ color: c.text, width: 80 }} numberOfLines={1}>{p.owner.name}</Text>
-            <Badge status={p.status} />
-            <Text style={s.muted}>{p.type ?? '-'}</Text>
-            <Pressable onPress={() => p.url && Linking.openURL(p.url)}>
-              <Text style={{ color: c.accent }} numberOfLines={1}>/{p.slug}</Text>
-            </Pressable>
-            <Text style={[s.muted, { flex: 1 }]} numberOfLines={1}>{p.title}</Text>
-            <Text style={s.muted}>
-              CPU {p.stats ? `${p.stats.cpu_percent.toFixed(1)}%` : '-'} · 메모리 {mb(p.stats?.mem_bytes)} · DB {mb(p.stats?.db_bytes)}
-            </Text>
-            <Button label="강제 중지" kind="ghost" small onPress={() => act(p, 'stop')} />
-            <Button label="삭제" kind="danger" small onPress={() => act(p, 'delete')} />
-          </View>
-          {p.latest_release?.state === 'failed' && p.latest_release.error ? (
-            <Text style={{ color: c.danger, fontSize: 12, marginTop: 4 }} numberOfLines={2}>v{p.latest_release.version}: {p.latest_release.error}</Text>
-          ) : null}
+      {rows && (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 28, marginBottom: 20 }}>
+          <Stat label="전체" value={rows.length} />
+          <Stat label="실행 중" value={count('running')} />
+          <Stat label="쉬는 중" value={count('sleeping')} />
+          <Stat label="빌드 중" value={count('building')} />
+          <Stat label="실패" value={count('failed')} />
         </View>
-      ))}
-      {rows && rows.length === 0 ? <Text style={s.muted}>아직 프로젝트가 없어요.</Text> : null}
+      )}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: t.borderStrong, borderRadius: radius.control, paddingHorizontal: 12, marginBottom: 12, maxWidth: 360 }}>
+        <MagnifyingGlass size={17} color={t.textMuted} />
+        <TextInput value={query} onChangeText={setQuery} placeholder="학번, 이름, 제목" placeholderTextColor={t.textMuted} style={{ flex: 1, fontFamily: font.family, fontSize: 14.5, color: t.text, paddingVertical: 9, outlineStyle: 'none' } as any} />
+      </View>
+      {!rows && !error && (
+        <View style={{ gap: 8 }}>
+          <Skeleton h={52} />
+          <Skeleton h={52} />
+          <Skeleton h={52} />
+        </View>
+      )}
+      <View style={{ gap: 6 }}>
+        {shown?.map((p) => (
+          <View key={p.student_no} style={{ backgroundColor: t.surfaceAlt, borderRadius: radius.control, padding: 12, gap: 6 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <T variant="heading" style={{ fontSize: 15, width: 44 }}>{p.student_no}</T>
+              <T style={{ color: t.text, width: 72 }} numberOfLines={1}>{p.owner.name || '-'}</T>
+              <Badge status={p.status} />
+              <Pressable onPress={() => p.url && Linking.openURL(p.url)} style={{ flex: 1, minWidth: 140 }}>
+                <T variant="sub" numberOfLines={1} style={{ color: t.accent }}>/{p.slug}  {p.title}</T>
+              </Pressable>
+              <T variant="small" style={{ fontFamily: font.mono }}>
+                CPU {p.stats ? `${p.stats.cpu_percent.toFixed(1)}%` : '-'}   MEM {mb(p.stats?.mem_bytes)}   DB {mb(p.stats?.db_bytes)}
+              </T>
+              <Button label="중지" kind="secondary" small icon={Stop} onPress={() => act(p, 'stop')} />
+              <Button label="삭제" kind="danger" small icon={Trash} onPress={() => act(p, 'delete')} />
+            </View>
+            {p.latest_release?.state === 'failed' && p.latest_release.error ? (
+              <T variant="small" style={{ color: t.danger }} numberOfLines={2}>v{p.latest_release.version}: {p.latest_release.error}</T>
+            ) : null}
+          </View>
+        ))}
+      </View>
+      {rows && rows.length === 0 ? <T variant="sub">아직 프로젝트가 없어요. 학번을 등록하면 학생들이 올리기 시작할 수 있어요.</T> : null}
     </Card>
   );
 }
 
 function ImportCard() {
+  const t = useTheme();
   const [result, setResult] = useState<{ created: number; updated: number; errors: { line: number; message: string }[] } | null>(null);
   const [error, setError] = useState('');
   const upload = async () => {
@@ -100,17 +143,19 @@ function ImportCard() {
     }
   };
   return (
-    <Card title="학번 매핑 CSV">
-      <Text style={[s.muted, { marginBottom: 10 }]}>형식: email,학번,이름 (한 줄에 한 명, 헤더 있어도 됨). 매핑된 학생만 업로드할 수 있어요.</Text>
-      <Button label="CSV 업로드" kind="ghost" onPress={upload} />
-      {error ? <View style={{ marginTop: 10 }}><Notice kind="error" text={error} /></View> : null}
+    <Card title="학번 등록" icon={FileCsv}>
+      <T variant="sub" style={{ marginBottom: 14 }}>
+        CSV 한 줄에 한 명씩 email,학번,이름 순서로 적어 주세요. 등록된 학생만 업로드할 수 있어요.
+      </T>
+      <FilePick icon={FileCsv} label="CSV 파일 올리기" onPress={upload} />
+      {error ? <Notice kind="error" text={error} /> : null}
       {result && (
-        <View style={{ marginTop: 10 }}>
-          <Notice kind={result.errors.length ? 'warn' : 'ok'} text={`추가 ${result.created}명 · 갱신 ${result.updated}명${result.errors.length ? ` · 오류 ${result.errors.length}건` : ''}`} />
+        <>
+          <Notice kind={result.errors.length ? 'warn' : 'ok'} text={`추가 ${result.created}명, 갱신 ${result.updated}명${result.errors.length ? `, 오류 ${result.errors.length}건` : ''}`} />
           {result.errors.map((e) => (
-            <Text key={e.line} style={{ color: c.danger, fontSize: 13 }}>{e.line}행: {e.message}</Text>
+            <T key={e.line} variant="small" style={{ color: t.danger }}>{e.line}행: {e.message}</T>
           ))}
-        </View>
+        </>
       )}
     </Card>
   );
@@ -134,13 +179,13 @@ function SettingsCard() {
       setDeadline(toLocalInput(c.upload_deadline));
     });
   }, []);
-  if (!cfg) return null;
+  if (!cfg) return <Skeleton h={300} r={16} />;
 
-  const num = (k: keyof Settings) => (t: string) => setCfg({ ...cfg, [k]: Number(t) || 0 });
+  const num = (k: keyof Settings) => (v: string) => setCfg({ ...cfg, [k]: Number(v) || 0 });
   const save = async () => {
     try {
       const d = deadline.trim() ? new Date(deadline.replace(' ', 'T')) : null;
-      if (d && isNaN(d.getTime())) throw new Error('마감 시각 형식: 2026-12-01 18:00');
+      if (d && isNaN(d.getTime())) throw new Error('마감 시각은 2026-12-01 18:00 형식으로 적어 주세요');
       setCfg(await api('/admin/settings', { method: 'PUT', ...json({ ...cfg, upload_deadline: d?.toISOString() ?? null }) }));
       setMsg({ kind: 'ok', text: '저장했어요. 리소스 한도는 다음 배포부터 적용돼요.' });
     } catch (e: any) {
@@ -149,13 +194,15 @@ function SettingsCard() {
   };
 
   return (
-    <Card title="설정">
-      <Field label="업로드 마감 (비우면 마감 없음)" value={deadline} onChangeText={setDeadline} placeholder="2026-12-01 18:00" hint="마감 후에는 관리자만 업로드할 수 있어요" />
-      <View style={s.row}>
-        <View style={{ width: 150 }}><Field label="서비스당 메모리(MB)" value={String(cfg.memory_mb)} onChangeText={num('memory_mb')} /></View>
-        <View style={{ width: 150 }}><Field label="스택 합계(MB)" value={String(cfg.stack_memory_mb)} onChangeText={num('stack_memory_mb')} /></View>
-        <View style={{ width: 110 }}><Field label="CPU" value={String(cfg.cpus)} onChangeText={(t) => setCfg({ ...cfg, cpus: parseFloat(t) || 0 })} /></View>
-        <View style={{ width: 110 }}><Field label="PIDs" value={String(cfg.pids)} onChangeText={num('pids')} /></View>
+    <Card title="운영 설정" icon={Sliders}>
+      <Field label="업로드 마감" value={deadline} onChangeText={setDeadline} placeholder="2026-12-01 18:00" hint="비우면 마감 없음. 마감 후에는 관리자만 올릴 수 있어요." />
+      <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap' }}>
+        <View style={{ flex: 1, minWidth: 130 }}><Field label="서비스당 메모리 (MB)" value={String(cfg.memory_mb)} onChangeText={num('memory_mb')} /></View>
+        <View style={{ flex: 1, minWidth: 130 }}><Field label="스택 합계 (MB)" value={String(cfg.stack_memory_mb)} onChangeText={num('stack_memory_mb')} /></View>
+      </View>
+      <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap' }}>
+        <View style={{ flex: 1, minWidth: 130 }}><Field label="CPU" value={String(cfg.cpus)} onChangeText={(v) => setCfg({ ...cfg, cpus: parseFloat(v) || 0 })} /></View>
+        <View style={{ flex: 1, minWidth: 130 }}><Field label="프로세스 수 (PIDs)" value={String(cfg.pids)} onChangeText={num('pids')} /></View>
       </View>
       {msg && <Notice kind={msg.kind} text={msg.text} />}
       <Button label="저장" onPress={save} />
@@ -170,13 +217,21 @@ function AuditCard() {
     if (open) api('/admin/audit-logs').then(setRows);
   }, [open]);
   return (
-    <Card title="감사 로그" right={<Button label={open ? '접기' : '보기'} kind="ghost" small onPress={() => setOpen(!open)} />}>
-      {open &&
-        rows.map((r, i) => (
-          <Text key={i} style={{ fontSize: 13, color: c.text, paddingVertical: 3 }}>
-            {new Date(r.at).toLocaleString('ko-KR')} · {r.actor ?? '-'} · {r.action} · {r.target}
-          </Text>
-        ))}
+    <Card title="활동 기록" icon={ClipboardText} right={<Button label={open ? '접기' : '펼치기'} kind="ghost" small onPress={() => setOpen(!open)} />}>
+      {!open ? (
+        <T variant="sub">업로드, 배포, 삭제 같은 작업이 모두 기록돼요.</T>
+      ) : (
+        <View style={{ gap: 6 }}>
+          {rows.map((r, i) => (
+            <View key={i} style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
+              <T variant="small" style={{ width: 130 }}>{new Date(r.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</T>
+              <T variant="small" style={{ fontWeight: '700' }}>{r.action}</T>
+              <T variant="small">{r.target}</T>
+              <T variant="small" style={{ flex: 1 }} numberOfLines={1}>{r.actor ?? '-'}</T>
+            </View>
+          ))}
+        </View>
+      )}
     </Card>
   );
 }
