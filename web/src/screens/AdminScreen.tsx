@@ -64,14 +64,31 @@ function ProjectsCard() {
     return () => clearInterval(id);
   }, [load]);
 
+  // 학번 → 진행 중인 작업. 워커가 실제로 끝낼 때까지 그 행을 스켈레톤으로 막아 연속 클릭을 막는다.
+  const [pending, setPending] = useState<Record<string, 'stop' | 'delete'>>({});
+  const done = (no: string) => setPending(({ [no]: _, ...rest }) => rest);
+
   const act = async (p: AdminProject, kind: 'stop' | 'delete') => {
+    if (pending[p.student_no]) return;
     if (kind === 'delete' && !window.confirm(`${p.student_no} ${p.owner.name} 학생의 스택, DB, 파일을 모두 삭제할까요? 되돌릴 수 없어요.`)) return;
+    setPending((s) => ({ ...s, [p.student_no]: kind }));
     try {
       await api(kind === 'stop' ? `/admin/projects/${p.student_no}/stop` : `/admin/projects/${p.student_no}`, { method: kind === 'stop' ? 'POST' : 'DELETE' });
-      setTimeout(load, 2000);
     } catch (e: any) {
       setError(e.message);
+      done(p.student_no);
+      return;
     }
+    // 끝날 때까지 2초마다 확인 (최대 60초)
+    for (let i = 0; i < 30; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const list = await api<AdminProject[]>('/admin/projects').catch(() => null);
+      if (!list) continue;
+      setRows(list);
+      const now = list.find((x) => x.student_no === p.student_no);
+      if (kind === 'delete' ? !now : now?.status !== 'running') break;
+    }
+    done(p.student_no);
   };
 
   const count = (s: string) => rows?.filter((p) => p.status === s).length ?? 0;
@@ -105,7 +122,19 @@ function ProjectsCard() {
         </View>
       )}
       <View style={{ gap: 6 }}>
-        {shown?.map((p) => (
+        {shown?.map((p) => pending[p.student_no] ? (
+          <View key={p.student_no} style={{ backgroundColor: t.surfaceAlt, borderRadius: radius.control, padding: 12, gap: 8 }} accessibilityState={{ busy: true }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <T variant="heading" style={{ fontSize: 15, width: 44 }}>{p.student_no}</T>
+              <T style={{ color: t.text, width: 72 }} numberOfLines={1}>{p.owner.name || '-'}</T>
+              <T variant="small" style={{ color: pending[p.student_no] === 'delete' ? t.danger : t.warn, fontWeight: '700' }}>
+                {pending[p.student_no] === 'delete' ? '삭제하는 중…' : '중지하는 중…'}
+              </T>
+              <View style={{ flex: 1 }}><Skeleton h={14} /></View>
+              <Skeleton h={32} w={150} r={radius.control} />
+            </View>
+          </View>
+        ) : (
           <View key={p.student_no} style={{ backgroundColor: t.surfaceAlt, borderRadius: radius.control, padding: 12, gap: 6 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <T variant="heading" style={{ fontSize: 15, width: 44 }}>{p.student_no}</T>
@@ -117,7 +146,7 @@ function ProjectsCard() {
               <T variant="small" style={{ fontFamily: font.mono }}>
                 CPU {p.stats ? `${p.stats.cpu_percent.toFixed(1)}%` : '-'}   MEM {mb(p.stats?.mem_bytes)}   DB {mb(p.stats?.db_bytes)}
               </T>
-              <Button label="중지" kind="secondary" small icon={Stop} onPress={() => act(p, 'stop')} />
+              <Button label="중지" kind="secondary" small icon={Stop} disabled={p.status !== 'running' && p.status !== 'sleeping'} onPress={() => act(p, 'stop')} />
               <Button label="삭제" kind="danger" small icon={Trash} onPress={() => act(p, 'delete')} />
             </View>
             {p.latest_release?.state === 'failed' && p.latest_release.error ? (

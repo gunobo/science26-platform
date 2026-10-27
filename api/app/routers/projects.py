@@ -18,7 +18,7 @@ from app.errors import APIError, not_found, upload_invalid
 from app.models import (
     EnvVar, Project, ProjectStatus, ProjectType, Release, ReleaseState, Role, SourceKind, User,
 )
-from app.queue import acquire_project_lock, enqueue, release_project_lock
+from app.queue import acquire_project_lock, claim_runtime_action, enqueue, release_project_lock
 from app.notify import activity
 from app.security import audit, decrypt, encrypt, mapped_student, rate_limit
 from app.services import validation as v
@@ -359,6 +359,7 @@ async def _require_active(db: AsyncSession, user: User) -> Project:
 @router.post("/stop", status_code=202)
 async def stop(user: User = Depends(mapped_student), db: AsyncSession = Depends(get_db)):
     project = await _require_active(db, user)
+    await claim_runtime_action(project.student_no)
     audit(db, user, "stop", project.student_no)
     await db.commit()
     await enqueue("stop_project", project.student_no, "stopped")
@@ -368,6 +369,7 @@ async def stop(user: User = Depends(mapped_student), db: AsyncSession = Depends(
 @router.post("/start", status_code=202)
 async def start(user: User = Depends(mapped_student), db: AsyncSession = Depends(get_db)):
     project = await _require_active(db, user)
+    await claim_runtime_action(project.student_no)
     audit(db, user, "start", project.student_no)
     await db.commit()
     await enqueue("start_project", project.student_no)

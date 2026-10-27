@@ -431,19 +431,30 @@ function RuntimeCard({ project, onChange }: { project: Project; onChange: () => 
   const t = useTheme();
   const [logs, setLogs] = useState<string[] | null>(null);
   const [service, setService] = useState('');
-  const [busy, setBusy] = useState(false);
+  // 'stopped' / 'running': 그 상태가 될 때까지 버튼 자리를 스켈레톤으로 막는다 (연속 클릭 방지)
+  const [waitFor, setWaitFor] = useState<'stopped' | 'running' | null>(null);
   const [error, setError] = useState('');
 
-  const act = async (path: string) => {
-    setBusy(true);
+  useEffect(() => {
+    if (!waitFor) return;
+    if (project.status === waitFor) {
+      setWaitFor(null);
+      return;
+    }
+    const tick = setInterval(onChange, 2000);
+    const giveUp = setTimeout(() => setWaitFor(null), 60000);
+    return () => { clearInterval(tick); clearTimeout(giveUp); };
+  }, [waitFor, project.status, onChange]);
+
+  const act = async (target: 'stopped' | 'running') => {
+    if (waitFor) return;
+    setWaitFor(target);
     setError('');
     try {
-      await api(path, { method: 'POST' });
-      setTimeout(onChange, 2500);
+      await api(target === 'stopped' ? '/projects/me/stop' : '/projects/me/start', { method: 'POST' });
     } catch (e: any) {
       setError(e.message);
-    } finally {
-      setBusy(false);
+      setWaitFor(null);
     }
   };
   const loadLogs = async () => {
@@ -460,10 +471,15 @@ function RuntimeCard({ project, onChange }: { project: Project; onChange: () => 
   return (
     <Card title="실행 관리" icon={GearSix}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-        {running ? (
-          <Button label="중지" kind="danger" icon={Stop} busy={busy} onPress={() => act('/projects/me/stop')} />
+        {waitFor ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }} accessibilityState={{ busy: true }}>
+            <Skeleton h={42} w={110} r={radius.control} />
+            <T variant="small" style={{ color: t.warn, fontWeight: '700' }}>{waitFor === 'stopped' ? '중지하는 중…' : '시작하는 중…'}</T>
+          </View>
+        ) : running ? (
+          <Button label="중지" kind="danger" icon={Stop} onPress={() => act('stopped')} />
         ) : (
-          <Button label="다시 시작" icon={Play} busy={busy} onPress={() => act('/projects/me/start')} />
+          <Button label="다시 시작" icon={Play} onPress={() => act('running')} />
         )}
         {project.type === 'fullstack' && <T variant="small" style={{ flex: 1, minWidth: 200 }}>30분 동안 방문이 없으면 쉬었다가, 누가 열면 다시 켜져요.</T>}
       </View>

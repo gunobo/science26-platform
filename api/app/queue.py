@@ -25,6 +25,12 @@ async def enqueue(job: str, *args, **kwargs):
     return await (await pool()).enqueue_job(job, *args, **kwargs)
 
 
+async def claim_runtime_action(student_no: str, seconds: int = 15) -> None:
+    """중지·시작 요청이 짧은 시간에 여러 번 들어오면 첫 번째만 받는다 (연속 클릭·중복 요청 방지)."""
+    if not await redis.set(f"runtime-action:{student_no}", "1", nx=True, ex=seconds):
+        raise APIError(409, "ACTION_IN_PROGRESS", "이미 처리 중이에요. 잠시 후 다시 시도하세요")
+
+
 def lock_key(student_no: str) -> str:
     return f"lock:project:{student_no}"
 

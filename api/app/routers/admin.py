@@ -15,7 +15,7 @@ from app.config import get_settings
 from app.db import get_db
 from app.errors import not_found, upload_invalid
 from app.models import AuditLog, Project, Release, User
-from app.queue import enqueue
+from app.queue import claim_runtime_action, enqueue
 from app.redis_client import redis
 from app.security import admin_user, audit
 from app.services.projects import project_out
@@ -51,6 +51,7 @@ async def force_stop(student_no: str, admin: User = Depends(admin_user), db: Asy
     project = (await db.execute(select(Project).where(Project.student_no == student_no))).scalar_one_or_none()
     if project is None:
         raise not_found()
+    await claim_runtime_action(student_no)
     audit(db, admin, "admin_stop", student_no)
     await db.commit()
     await enqueue("stop_project", student_no, "stopped")

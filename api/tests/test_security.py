@@ -155,3 +155,25 @@ def test_discord_mentions_only_configured_users(monkeypatch):
 
     asyncio.run(notify.send("디스크 경고"))
     assert sent["allowed_mentions"] == {"parse": [], "users": []} and "<@" not in sent["content"]
+
+
+def test_runtime_action_claimed_once(monkeypatch):
+    import asyncio
+
+    from app import queue
+    from app.errors import APIError
+
+    store: dict[str, str] = {}
+
+    async def fake_set(key, value, nx=False, ex=None):
+        if nx and key in store:
+            return None
+        store[key] = value
+        return True
+
+    monkeypatch.setattr(queue.redis, "set", fake_set)
+    asyncio.run(queue.claim_runtime_action("1411"))
+    with pytest.raises(APIError) as e:
+        asyncio.run(queue.claim_runtime_action("1411"))
+    assert e.value.status == 409
+    asyncio.run(queue.claim_runtime_action("1203"))  # 다른 학생은 영향 없음
