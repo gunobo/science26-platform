@@ -200,11 +200,29 @@ async def healthcheck(slug: str, emit) -> None:
                 if 200 <= res.status_code < 400 and not fallback:
                     await emit(f"헬스체크 통과 ({res.status_code})")
                     return
-                last = f"HTTP {res.status_code}"
+                last = (
+                    "학생 페이지 대신 준비 중 페이지가 응답했어요. 컨테이너가 꺼졌거나 Traefik 에 등록되지 않았어요"
+                    if fallback else f"HTTP {res.status_code}"
+                )
             except httpx.HTTPError as e:
                 last = type(e).__name__
             await asyncio.sleep(2)
     raise DeployError(f"헬스체크 실패: {s.health_timeout_seconds}초 안에 {base_path(slug)}/ 가 응답하지 않았습니다 ({last})")
+
+
+async def dump_stack_state(pname: str, compose_file: Path, emit) -> None:
+    """실패한 스택을 내리기 전에 상태와 로그를 빌드 로그에 남긴다 (내린 뒤에는 원인을 알 수 없어서)."""
+    for title, args in (
+        ("컨테이너 상태", ("ps", "-a", "--format", "{{.Service}}  {{.State}}  {{.Status}}")),
+        ("컨테이너 로그 (마지막 30줄)", ("logs", "--no-color", "--tail", "30")),
+    ):
+        try:
+            out = await d.run(*d.compose(pname, compose_file, *args), timeout=20)
+        except d.CommandError as e:
+            out = str(e)
+        await emit(f"--- {title} ---")
+        for line in (out.strip() or "(없음)").splitlines()[-40:]:
+            await emit(line)
 
 
 async def deploy(release_id: str, *, build: bool) -> None:
@@ -287,6 +305,7 @@ async def deploy(release_id: str, *, build: bool) -> None:
             await emit(f"❌ {msg}")
             # 새 스택만 내린다. 같은 버전을 다시 띄운 경우(이전 스택과 같은 이름)는 건드리지 않는다.
             if started and (not prev_active_id or str(prev_active_id) != release_id):
+                await dump_stack_state(pname, compose_file, emit)
                 try:
                     await d.down_project(pname)
                 except d.CommandError:
