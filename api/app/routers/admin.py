@@ -4,9 +4,12 @@ import json
 import re
 import shutil
 from datetime import datetime
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
 from pydantic import BaseModel
 from sqlalchemy import func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,6 +50,77 @@ async def students(_: User = Depends(admin_user), db: AsyncSession = Depends(get
 
     학번 4자리 = 학년 1자리 + 반 1자리 + 번호 2자리 (예: 1411 → 1학년 4반 11번).
     """
+    return await _student_rows(db)
+
+
+STATE_LABELS = {
+    "deployed": "제출 완료", "building": "빌드 중", "failed": "배포 실패",
+    "no_upload": "미제출", "not_logged_in": "미접속",
+}
+
+
+@router.get("/students/export.xlsx")
+async def students_export(
+    room: str = Query("all", pattern=r"^(all|test|\d-\d)$"),
+    filter: str = Query("missing", pattern="^(all|missing|not_logged_in|deployed)$"),
+    _: User = Depends(admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """학생 현황 화면과 같은 조건(학반·필터)으로 엑셀 파일을 만든다."""
+    rows = [
+        r for r in await _student_rows(db)
+        if (r["is_test"] if room == "test" else (not r["is_test"] and (room == "all" or f"{r['grade']}-{r['class']}" == room)))
+        and (
+            filter == "all"
+            or (filter == "missing" and r["state"] != "deployed")
+            or r["state"] == filter
+        )
+    ]
+    filter_label = {"all": "전체", "missing": "미제출", "not_logged_in": "미접속", "deployed": "제출완료"}[filter]
+    room_label = {"all": "전체", "test": "테스트계정"}.get(room) or f"{room[0]}학년{room[2]}반"
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = filter_label
+    headers = ["학년", "반", "번호", "학번", "이름", "이메일", "상태", "로그인 여부", "프로젝트 제목", "주소"]
+    ws.append(headers)
+    for r in rows:
+        p = r["project"] or {}
+        ws.append([_cell(v) for v in (
+            int(r["grade"]), int(r["class"]), int(r["number"]), r["student_no"], r["name"], r["email"],
+            STATE_LABELS.get(r["state"], r["state"]), "O" if r["logged_in"] else "X", p.get("title") or "", p.get("url") or "",
+        )])
+    head_fill = PatternFill("solid", fgColor="064E3B")
+    for c in ws[1]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = head_fill
+        c.alignment = Alignment(horizontal="center")
+    for col, width in zip("ABCDEFGHIJ", (6, 5, 6, 8, 12, 28, 10, 11, 28, 48)):
+        ws.column_dimensions[col].width = width
+    ws.freeze_panes = "A2"
+    if rows:
+        ws.auto_filter.ref = ws.dimensions
+    ws.append([])
+    ws.append([f"{room_label} · {filter_label} {len(rows)}명 · {datetime.now(KST):%Y-%m-%d %H:%M} 기준"])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    name = f"science26_{room_label}_{filter_label}_{datetime.now(KST):%Y%m%d}.xlsx"
+    return Response(
+        buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=\"science26.xlsx\"; filename*=UTF-8''{quote(name)}"},
+    )
+
+
+def _cell(v):
+    # 이름·제목이 = + - @ 로 시작하면 엑셀이 수식으로 실행하므로 글자로 고정한다 (CSV/수식 주입 방지)
+    if isinstance(v, str) and v[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + v
+    return v
+
+
+async def _student_rows(db: AsyncSession) -> list[dict]:
     rows = await db.execute(
         select(User, Project).outerjoin(Project, Project.owner_id == User.id)
         .where(User.student_no.is_not(None)).order_by(User.student_no)

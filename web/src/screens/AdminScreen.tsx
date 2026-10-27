@@ -2,11 +2,11 @@ import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Linking, Pressable, Switch, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import {
-  ArrowCounterClockwise, ArrowsClockwise, Bell, CaretLeft, CaretRight, ClipboardText, Copy, Student, UserPlus, FileCsv, Key, MagnifyingGlass, PencilSimple, Play, SignIn,
+  ArrowCounterClockwise, ArrowsClockwise, Bell, CaretLeft, CaretRight, ClipboardText, Copy, MicrosoftExcelLogo, Student, UserPlus, FileCsv, Key, MagnifyingGlass, PencilSimple, Play, SignIn,
   Sliders, Sparkle, Stop, Trash, UploadSimple, UsersThree,
 } from '@phosphor-icons/react';
 
-import { api, json, Project } from '../api';
+import { API_BASE, api, json, Project } from '../api';
 import { font, radius, useTheme } from '../theme';
 import { Badge, Button, Card, Field, FilePick, Icon, Notice, Segmented, Skeleton, T } from '../ui';
 
@@ -169,6 +169,17 @@ function StudentsCard() {
                 <Button label={copied ? '복사됨' : '미제출 명단 복사'} kind="secondary" small icon={Copy} onPress={copyMissing} />
               </View>
             )}
+            <View style={{ marginBottom: 16 }}>
+              {/* 지금 고른 학반·필터 그대로 내려받는다 (같은 출처 GET 이라 로그인 쿠키가 그대로 쓰인다) */}
+              <Button
+                label="엑셀로 받기"
+                kind="secondary"
+                small
+                icon={MicrosoftExcelLogo}
+                disabled={shown.length === 0}
+                onPress={() => window.open(`${API_BASE}/admin/students/export.xlsx?room=${encodeURIComponent(room)}&filter=${filter}`, '_blank')}
+              />
+            </View>
           </View>
 
           {shown.length === 0 ? (

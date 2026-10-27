@@ -15,3 +15,6 @@ students*.csv
 students*.xlsx
 examples/*.zip
 examples/*.apk
+
+# 관리자 화면에서 받은 명단 등 (학생 개인정보)
+/*.xlsx

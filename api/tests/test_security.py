@@ -200,3 +200,43 @@ def test_student_caps_are_minimal(tmp_path):
     assert web["cap_drop"] == ["ALL"]
     assert sorted(web["cap_add"]) == ["CHOWN", "NET_BIND_SERVICE", "SETGID", "SETUID"]
     assert web["read_only"] is True and "no-new-privileges:true" in web["security_opt"]
+
+
+def test_students_export_xlsx(client, monkeypatch):
+    import io
+
+    from openpyxl import load_workbook
+
+    from app.db import get_db
+    from app.routers import admin
+    from app.security import admin_user
+
+    def row(no, name, state, test=False):
+        return {"student_no": no, "grade": no[0], "class": no[1], "number": no[2:], "name": name,
+                "email": f"s{no}@bssm.hs.kr", "logged_in": state != "not_logged_in", "is_test": test,
+                "state": state, "project": None}
+
+    async def fake_rows(db):
+        return [row("1401", "김하린", "deployed"), row("1402", "=HYPERLINK(\"x\")", "no_upload"),
+                row("1403", "이서준", "not_logged_in"), row("1501", "박도윤", "no_upload"),
+                row("9901", "테스트", "no_upload", test=True)]
+
+    async def fake_db():
+        yield None
+
+    monkeypatch.setattr(admin, "_student_rows", fake_rows)
+    app.dependency_overrides[admin_user] = lambda: None
+    app.dependency_overrides[get_db] = fake_db
+    try:
+        r = client.get("/api/v1/admin/students/export.xlsx?room=1-4&filter=missing")
+        bad = client.get("/api/v1/admin/students/export.xlsx?room=x")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert r.status_code == 200 and "spreadsheetml" in r.headers["content-type"]
+    assert "filename*=UTF-8''" in r.headers["content-disposition"]
+    ws = load_workbook(io.BytesIO(r.content)).active
+    data = [row for row in ws.iter_rows(min_row=2, max_row=3, values_only=True)]
+    assert [d[3] for d in data] == ["1402", "1403"]          # 1학년 4반의 미제출·미접속만, 테스트 계정 제외
+    assert data[0][4] == "'=HYPERLINK(\"x\")"                 # 수식으로 실행되지 않게
+    assert bad.status_code == 422
