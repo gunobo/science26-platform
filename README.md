@@ -103,6 +103,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm -v ./ex
 - 서버 점검(보안 업데이트, `.env` 보관, SSH 키 로그인, 알림, 외부 감시): `docs/server-hardening.md`
 - 학생 compose 의 `${...}` 치환은 막혀 있고, docker·git 은 비밀값이 없는 환경에서 실행한다
 - 학생 라벨은 `science26.*` 만 허용, 학생 컨테이너 로그는 5MB × 2
+- 학생 컨테이너 권한: `cap_drop: ALL` 후 `CHOWN`·`SETUID`·`SETGID`·`NET_BIND_SERVICE` 만 다시 허용 (root 로 시작해 내려가는 nginx·httpd 공식 이미지용). 읽기 전용 + `/tmp`·`/run`·`/var/cache/nginx` tmpfs
 
 ## 개발
 

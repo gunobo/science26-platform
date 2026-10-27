@@ -89,6 +89,9 @@ def traefik_labels(
     return labels
 
 
+STUDENT_CAPS = ("CHOWN", "SETUID", "SETGID", "NET_BIND_SERVICE")
+
+
 def hardening(memory_mb: int, cpus: float, pids: int) -> dict:
     return {
         "mem_limit": f"{memory_mb}m",
@@ -97,8 +100,13 @@ def hardening(memory_mb: int, cpus: float, pids: int) -> dict:
         "pids_limit": pids,
         "security_opt": ["no-new-privileges:true"],
         "cap_drop": ["ALL"],
+        # nginx·httpd 같은 공식 이미지는 root 로 시작해 임시 폴더 소유자를 바꾸고(CHOWN) 일반 사용자로 내려간다(SETUID/SETGID).
+        # 80번 포트는 NET_BIND_SERVICE 가 필요하다. 모두 Docker 기본 권한에 들어 있는 것들이고,
+        # 그 밖의 권한(NET_RAW, SYS_* 등)은 계속 뺀다. no-new-privileges·읽기 전용 파일시스템은 그대로.
+        "cap_add": list(STUDENT_CAPS),
         "read_only": True,
-        "tmpfs": ["/tmp:size=64m"],
+        # 읽기 전용 파일시스템에서 흔한 웹 서버가 쓰는 임시 경로 (재시작하면 비워짐)
+        "tmpfs": ["/tmp:size=64m", "/run:size=8m", "/var/cache/nginx:size=32m"],
         "restart": "on-failure:3",
         # 학생 앱이 로그를 무한히 찍어도 디스크가 차지 않게
         "logging": {"driver": "json-file", "options": {"max-size": "5m", "max-file": "2"}},

@@ -177,3 +177,12 @@ def test_runtime_action_claimed_once(monkeypatch):
         asyncio.run(queue.claim_runtime_action("1411"))
     assert e.value.status == 409
     asyncio.run(queue.claim_runtime_action("1203"))  # 다른 학생은 영향 없음
+
+
+def test_student_caps_are_minimal(tmp_path):
+    out = static_compose(student_no="1411", slug="x", version=1, seq=1, context=tmp_path,
+                         public_host="h", edge_network="e", memory_mb=256, cpus=0.5, pids=128)
+    web = out["services"]["web"]
+    assert web["cap_drop"] == ["ALL"]
+    assert sorted(web["cap_add"]) == ["CHOWN", "NET_BIND_SERVICE", "SETGID", "SETUID"]
+    assert web["read_only"] is True and "no-new-privileges:true" in web["security_opt"]
