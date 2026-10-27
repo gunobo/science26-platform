@@ -1,8 +1,8 @@
 import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Linking, Pressable, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { Linking, Pressable, Switch, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import {
-  ArrowCounterClockwise, ArrowsClockwise, Bell, CaretLeft, CaretRight, ClipboardText, FileCsv, Key, MagnifyingGlass, PencilSimple, Play, SignIn,
+  ArrowCounterClockwise, ArrowsClockwise, Bell, CaretLeft, CaretRight, ClipboardText, Copy, Student, UserPlus, FileCsv, Key, MagnifyingGlass, PencilSimple, Play, SignIn,
   Sliders, Sparkle, Stop, Trash, UploadSimple, UsersThree,
 } from '@phosphor-icons/react';
 
@@ -23,11 +23,13 @@ export default function AdminScreen() {
   const wide = width >= 980;
   return (
     <View>
+      <StudentsCard />
       <ProjectsCard />
       <ActivityCard />
       <View style={{ flexDirection: wide ? 'row' : 'column', gap: wide ? 20 : 0, alignItems: 'flex-start' }}>
         <View style={{ flex: 1, minWidth: 0, width: wide ? undefined : '100%' }}>
           <ImportCard />
+          <AddStudentCard />
         </View>
         <View style={{ flex: 1, minWidth: 0, width: wide ? undefined : '100%' }}>
           <SettingsCard />
@@ -44,6 +46,183 @@ function Stat({ label, value }: { label: string; value: number }) {
       <Text style={{ fontFamily: font.family, fontSize: 28, fontWeight: '800', letterSpacing: -0.8, color: t.text }}>{value}</Text>
       <T variant="small">{label}</T>
     </View>
+  );
+}
+
+type StudentRow = {
+  student_no: string;
+  grade: string;
+  class: string;
+  number: string;
+  name: string;
+  email: string;
+  logged_in: boolean;
+  is_test: boolean;
+  state: 'deployed' | 'building' | 'failed' | 'no_upload' | 'not_logged_in';
+  project: { slug: string; title: string; type: string | null; status: string; url: string | null } | null;
+};
+type StudentFilter = 'all' | 'missing' | 'not_logged_in' | 'deployed';
+
+function StudentsCard() {
+  const t = useTheme();
+  const { width } = useWindowDimensions();
+  const [rows, setRows] = useState<StudentRow[] | null>(null);
+  const [error, setError] = useState('');
+  const [room, setRoom] = useState('all'); // '1-4' 형식
+  const [filter, setFilter] = useState<StudentFilter>('missing');
+  const [query, setQuery] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const load = useCallback(() => {
+    api<StudentRow[]>('/admin/students').then((r) => { setRows(r); setError(''); }).catch((e) => setError(e.message));
+  }, []);
+  useEffect(() => {
+    load();
+    const id = setInterval(load, 30000);
+    return () => clearInterval(id);
+  }, [load]);
+
+  // 테스트 계정은 반 통계에 섞이지 않게 따로 묶는다
+  const roomOf = (s: StudentRow) => (s.is_test ? 'test' : `${s.grade}-${s.class}`);
+  const rooms = useMemo(() => {
+    const m = new Map<string, { total: number; done: number }>();
+    rows?.forEach((s) => {
+      const r = m.get(roomOf(s)) ?? { total: 0, done: 0 };
+      r.total += 1;
+      if (s.state === 'deployed') r.done += 1;
+      m.set(roomOf(s), r);
+    });
+    // 테스트 묶음은 맨 뒤
+    return [...m.entries()].sort(([a], [b]) => (a === 'test' ? 1 : b === 'test' ? -1 : a.localeCompare(b)));
+  }, [rows]);
+
+  const inRoom = rows?.filter((s) => (room === 'all' ? !s.is_test : roomOf(s) === room)) ?? [];
+  const missing = (s: StudentRow) => s.state !== 'deployed';
+  const shown = inRoom.filter((s) => {
+    if (filter === 'missing' && !missing(s)) return false;
+    if (filter === 'not_logged_in' && s.state !== 'not_logged_in') return false;
+    if (filter === 'deployed' && s.state !== 'deployed') return false;
+    const q = query.trim().toLowerCase();
+    return !q || [s.student_no, s.name, s.email, s.project?.title ?? ''].some((v) => v.toLowerCase().includes(q));
+  });
+  const done = inRoom.filter((s) => s.state === 'deployed').length;
+  const notIn = inRoom.filter((s) => s.state === 'not_logged_in').length;
+
+  const removeTest = async (s: StudentRow) => {
+    if (!window.confirm(`테스트 계정 ${s.student_no} ${s.email} 과 그 프로젝트를 모두 지울까요?`)) return;
+    try {
+      await api(`/admin/users/${s.student_no}`, { method: 'DELETE' });
+      load();
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+
+  const copyMissing = () => {
+    const names = inRoom.filter(missing).map((s) => `${s.student_no} ${s.name}`).join('\n');
+    navigator.clipboard?.writeText(names);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  const cols = width >= 1100 ? 3 : width >= 720 ? 2 : 1;
+
+  return (
+    <Card title="학생 현황" icon={Student} right={<Button label="새로고침" kind="ghost" small icon={ArrowsClockwise} onPress={load} />}>
+      {error ? <Notice kind="error" text={error} /> : null}
+      {!rows && !error && <Skeleton h={120} />}
+      {rows && rows.length === 0 && <T variant="sub">아직 등록된 학생이 없어요. 아래 학번 등록에서 CSV 를 올려 주세요.</T>}
+      {rows && rows.length > 0 && (
+        <>
+          {/* 학반 선택: 반마다 제출 현황을 같이 보여준다 */}
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+            <RoomChip label="전체" sub={`${rows.filter((s) => !s.is_test && s.state === 'deployed').length}/${rows.filter((s) => !s.is_test).length}`} active={room === 'all'} onPress={() => setRoom('all')} />
+            {rooms.map(([r, c]) => {
+              const [g, cl] = r.split('-');
+              return <RoomChip key={r} label={r === 'test' ? '테스트 계정' : `${g}학년 ${cl}반`} sub={`${c.done}/${c.total}`} complete={c.done === c.total} active={room === r} onPress={() => setRoom(r)} />;
+            })}
+          </View>
+
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 28, marginBottom: 16 }}>
+            <Stat label="학생" value={inRoom.length} />
+            <Stat label="제출 완료" value={done} />
+            <Stat label="미제출" value={inRoom.length - done} />
+            <Stat label="한 번도 접속 안 함" value={notIn} />
+          </View>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+            <Segmented
+              value={filter}
+              onChange={setFilter}
+              options={[
+                { value: 'missing', label: '미제출' },
+                { value: 'not_logged_in', label: '미접속' },
+                { value: 'deployed', label: '제출 완료' },
+                { value: 'all', label: '전체' },
+              ]}
+            />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: t.borderStrong, borderRadius: radius.control, paddingHorizontal: 12, marginBottom: 16, flex: 1, minWidth: 180, maxWidth: 300 }}>
+              <MagnifyingGlass size={17} color={t.textMuted} />
+              <TextInput value={query} onChangeText={setQuery} placeholder="이름, 학번" placeholderTextColor={t.textMuted} accessibilityLabel="학생 검색" style={{ flex: 1, fontFamily: font.family, fontSize: 14.5, color: t.text, paddingVertical: 9, outlineStyle: 'none' } as any} />
+            </View>
+            {inRoom.length - done > 0 && (
+              <View style={{ marginBottom: 16 }}>
+                <Button label={copied ? '복사됨' : '미제출 명단 복사'} kind="secondary" small icon={Copy} onPress={copyMissing} />
+              </View>
+            )}
+          </View>
+
+          {shown.length === 0 ? (
+            <T variant="sub">{filter === 'missing' ? '이 반은 모두 제출했어요.' : '해당하는 학생이 없어요.'}</T>
+          ) : (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4 }}>
+              {shown.map((s) => (
+                <View key={s.student_no} style={{ width: `${100 / cols}%`, padding: 4 }}>
+                  <View style={{ backgroundColor: t.surfaceAlt, borderRadius: radius.control, padding: 10, gap: 4 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <T variant="heading" style={{ fontSize: 14.5 }}>{s.student_no}</T>
+                      <T style={{ color: t.text, flex: 1 }} numberOfLines={1}>{s.name || '-'}</T>
+                      {s.is_test && <Badge status="test" label="테스트" />}
+                      <Badge status={s.state} />
+                    </View>
+                    {s.is_test && (
+                      <View style={{ alignSelf: 'flex-start' }}>
+                        <Button label="계정 삭제" kind="ghost" small icon={Trash} onPress={() => removeTest(s)} />
+                      </View>
+                    )}
+                    {s.project?.url ? (
+                      <Pressable onPress={() => Linking.openURL(s.project!.url!)}>
+                        <T variant="small" numberOfLines={1} style={{ color: t.accent }}>{s.project.title || `/${s.project.slug}`}</T>
+                      </Pressable>
+                    ) : (
+                      <T variant="small" numberOfLines={1}>{s.state === 'not_logged_in' ? s.email : s.project?.title || '올린 프로젝트 없음'}</T>
+                    )}
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
+
+function RoomChip({ label, sub, active, complete, onPress }: { label: string; sub: string; active: boolean; complete?: boolean; onPress: () => void }) {
+  const t = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      style={({ hovered }: any) => ({
+        flexDirection: 'row', alignItems: 'center', gap: 6, height: 34, paddingHorizontal: 12, borderRadius: radius.pill, borderWidth: 1,
+        borderColor: active ? t.text : t.borderStrong,
+        backgroundColor: active ? t.text : hovered ? t.surfaceAlt : t.surface,
+      })}
+    >
+      <Text style={{ fontFamily: font.family, fontWeight: '700', fontSize: 13.5, color: active ? t.bg : t.text }}>{label}</Text>
+      <Text style={{ fontFamily: font.mono, fontSize: 12, color: active ? t.bg : complete ? t.ok : t.textMuted }}>{sub}</Text>
+    </Pressable>
   );
 }
 
@@ -156,6 +335,56 @@ function ProjectsCard() {
         ))}
       </View>
       {rows && rows.length === 0 ? <T variant="sub">아직 프로젝트가 없어요. 학번을 등록하면 학생들이 올리기 시작할 수 있어요.</T> : null}
+    </Card>
+  );
+}
+
+function AddStudentCard() {
+  const t = useTheme();
+  const [email, setEmail] = useState('');
+  const [no, setNo] = useState('');
+  const [name, setName] = useState('');
+  const [isTest, setIsTest] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ text: string; kind: 'ok' | 'error' } | null>(null);
+
+  const add = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api('/admin/users', { method: 'POST', ...json({ email, student_no: no, name, is_test: isTest }) });
+      setMsg({ kind: 'ok', text: `${no} ${name || email} 추가했어요.${isTest ? ' 이 구글 계정으로 학생 화면에 로그인할 수 있어요.' : ''}` });
+      setEmail('');
+      setNo('');
+      setName('');
+    } catch (e: any) {
+      setMsg({ kind: 'error', text: e.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card title="학생 한 명 추가" icon={UserPlus}>
+      <T variant="sub" style={{ marginBottom: 14 }}>
+        테스트 계정은 학교 계정이 아닌 구글 계정(개인 Gmail 등)도 학생으로 로그인할 수 있어요. 학생 현황에서는 반 통계와 따로 보여요.
+      </T>
+      <Field label="구글 계정 이메일" value={email} onChangeText={setEmail} autoCapitalize="none" placeholder="tester@gmail.com" />
+      <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap' }}>
+        <View style={{ flex: 1, minWidth: 110 }}>
+          <Field label="학번 (4자리)" value={no} onChangeText={(v) => setNo(v.replace(/\D/g, '').slice(0, 4))} placeholder="9901" keyboardType="number-pad" />
+        </View>
+        <View style={{ flex: 2, minWidth: 140 }}>
+          <Field label="이름" value={name} onChangeText={setName} placeholder="테스트 학생" />
+        </View>
+      </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+        <Switch value={isTest} onValueChange={setIsTest} trackColor={{ true: t.accent, false: t.borderStrong }} />
+        <T style={{ color: t.text }}>테스트 계정</T>
+        <T variant="small">끄면 일반 학생처럼 학교 계정만 로그인할 수 있어요</T>
+      </View>
+      {msg && <Notice kind={msg.kind} text={msg.text} />}
+      <Button label="추가" icon={UserPlus} busy={busy} disabled={!email.includes('@') || no.length !== 4} onPress={add} />
     </Card>
   );
 }

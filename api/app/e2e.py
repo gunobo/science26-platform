@@ -34,6 +34,8 @@ STATIC_MARK = "science26-e2e-static"
 TERMINAL = {"active", "failed", "superseded"}
 # 1x1 PNG (스크린샷 자리)
 TESTFLIGHT = "https://testflight.apple.com/join/E2Etest1"
+# examples/mobile-test/make_test_apk.py 로 만든 최소 APK (업로드 검사·다운로드 확인용)
+DEFAULT_APK = Path("/examples/mobile-test/science26-test.apk")
 # mp4 머리(ftyp)만 있는 가짜 영상. 재생은 안 되지만 업로드 검사·전달 확인용
 VIDEO = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 64
 PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=")
@@ -250,7 +252,8 @@ class E2E:
 
 async def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--apk", type=Path, help="서명된 APK 경로 (없으면 APK 확인만 건너뜀)")
+    parser.add_argument("--apk", type=Path, default=DEFAULT_APK if DEFAULT_APK.exists() else None,
+                        help="서명된 APK 경로 (기본: examples/mobile-test 의 테스트 APK, 없으면 APK 확인만 건너뜀)")
     parser.add_argument("--keep", action="store_true", help="끝나고 테스트 프로젝트·계정을 지우지 않음")
     args = parser.parse_args()
 

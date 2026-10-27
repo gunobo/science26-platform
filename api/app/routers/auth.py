@@ -31,6 +31,10 @@ def is_allowed(email: str, hd: str | None) -> bool:
     return (hd or "").lower() in s.allowed_domain_set or email.lower() in s.admin_email_set
 
 
+async def is_test_account(db: AsyncSession, email: str) -> bool:
+    return bool(await db.scalar(select(User.id).where(User.email == email.lower(), User.is_test.is_(True))))
+
+
 def _redirect_uri() -> str:
     return f"{get_settings().upload_url}/api/v1/auth/google/callback"
 
@@ -72,7 +76,7 @@ async def _login_as(db: AsyncSession, email: str, name: str) -> User:
 
 
 @router.get("/google/login")
-async def google_login(request: Request):
+async def google_login(request: Request, db: AsyncSession = Depends(get_db)):
     await ip_rate_limit(request, "login", limit=300)
     s = get_settings()
     state = secrets.token_urlsafe(24)
@@ -85,8 +89,9 @@ async def google_login(request: Request):
         "state": state,
         "prompt": "select_account",
     }
-    # 관리자 중 학교 밖 계정(예: 개인 Gmail)이 있으면 hd 힌트를 빼야 계정 선택 화면에서 고를 수 있다
-    if len(s.allowed_domain_set) == 1 and all(
+    # 관리자나 테스트 계정 중 학교 밖 계정(예: 개인 Gmail)이 있으면 hd 힌트를 빼야 계정 선택 화면에서 고를 수 있다
+    outside = await db.scalar(select(User.id).where(User.is_test.is_(True)).limit(1))
+    if not outside and len(s.allowed_domain_set) == 1 and all(
         e.rsplit("@", 1)[-1] in s.allowed_domain_set for e in s.admin_email_set
     ):
         params["hd"] = next(iter(s.allowed_domain_set))
@@ -129,7 +134,10 @@ async def google_callback(
         "https://accounts.google.com",
     ):
         return RedirectResponse("/?error=oauth")
-    if not claims.get("email_verified") or not is_allowed(claims.get("email", ""), claims.get("hd")):
+    email = claims.get("email", "")
+    if not claims.get("email_verified") or not (
+        is_allowed(email, claims.get("hd")) or await is_test_account(db, email)
+    ):
         return RedirectResponse("/?error=domain")
 
     user = await _login_as(db, claims["email"], claims.get("name", ""))
@@ -150,7 +158,7 @@ async def dev_login(body: DevLogin, request: Request, db: AsyncSession = Depends
     await ip_rate_limit(request, "devlogin", limit=10)
     if os.environ.get("DEV_LOGIN") != "true":
         raise forbidden()
-    if not is_allowed(body.email, body.email.rsplit("@", 1)[-1]):
+    if not (is_allowed(body.email, body.email.rsplit("@", 1)[-1]) or await is_test_account(db, body.email)):
         raise APIError(403, "FORBIDDEN", "학교 계정만 로그인할 수 있습니다")
     user = await _login_as(db, body.email, body.name)
     sid = await create_session(user.id)

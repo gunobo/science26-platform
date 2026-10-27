@@ -7,18 +7,19 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile
+from pydantic import BaseModel
 from sqlalchemy import func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import settings_store
 from app.config import get_settings
 from app.db import get_db
-from app.errors import not_found, upload_invalid
+from app.errors import APIError, not_found, upload_invalid
 from app.models import AuditLog, Project, Release, User
 from app.queue import claim_runtime_action, enqueue
 from app.redis_client import redis
 from app.security import admin_user, audit
-from app.services.projects import project_out
+from app.services.projects import project_out, student_url
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -36,6 +37,44 @@ async def all_projects(_: User = Depends(admin_user), db: AsyncSession = Depends
             **project_out(project, active),
             "owner": {"email": owner.email, "name": owner.name},
             "stats": json.loads(stats) if stats else None,
+        })
+    return out
+
+
+@router.get("/students")
+async def students(_: User = Depends(admin_user), db: AsyncSession = Depends(get_db)):
+    """학번이 등록된 학생 전원과 제출 현황 (프로젝트가 없는 학생도 포함).
+
+    학번 4자리 = 학년 1자리 + 반 1자리 + 번호 2자리 (예: 1411 → 1학년 4반 11번).
+    """
+    rows = await db.execute(
+        select(User, Project).outerjoin(Project, Project.owner_id == User.id)
+        .where(User.student_no.is_not(None)).order_by(User.student_no)
+    )
+    out = []
+    for user, project in rows:
+        if project is None:
+            state = "not_logged_in" if user.last_login_at is None else "no_upload"
+        elif project.active_release_id:
+            state = "deployed"
+        elif project.status.value in ("building",):
+            state = "building"
+        else:
+            state = "failed"
+        out.append({
+            "student_no": user.student_no,
+            "grade": user.student_no[0],
+            "class": user.student_no[1],
+            "number": user.student_no[2:],
+            "name": user.name,
+            "email": user.email,
+            "logged_in": user.last_login_at is not None,
+            "is_test": user.is_test,
+            "state": state,
+            "project": None if project is None else {
+                "slug": project.slug, "title": project.title, "type": project.type.value if project.type else None,
+                "status": project.status.value, "url": student_url(project.slug) if project.active_release_id else None,
+            },
         })
     return out
 
@@ -108,6 +147,51 @@ async def import_users(
     audit(db, admin, "import_users", f"{created}+{updated}")
     await db.commit()
     return {"created": created, "updated": updated, "errors": errors}
+
+
+class StudentIn(BaseModel):
+    email: str
+    student_no: str
+    name: str = ""
+    is_test: bool = False
+
+
+@router.post("/users", status_code=201)
+async def add_student(body: StudentIn, admin: User = Depends(admin_user), db: AsyncSession = Depends(get_db)):
+    """학생 한 명 추가. is_test 면 학교 도메인이 아닌 구글 계정도 학생으로 로그인할 수 있다."""
+    email, no = body.email.strip().lower(), body.student_no.strip()
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        raise APIError(400, "UPLOAD_INVALID", "이메일 형식이 올바르지 않습니다")
+    if not re.fullmatch(r"\d{4}", no):
+        raise APIError(400, "UPLOAD_INVALID", "학번은 숫자 4자리입니다")
+    holder = await db.scalar(select(User).where(User.student_no == no))
+    if holder and holder.email != email:
+        raise APIError(409, "CONFLICT", f"학번 {no} 은 이미 {holder.email} 에 연결돼 있어요")
+    user = await db.scalar(select(User).where(User.email == email))
+    if user and user.student_no and user.student_no != no:
+        raise APIError(409, "CONFLICT", f"{email} 은 이미 학번 {user.student_no} 이에요")
+    if user is None:
+        user = User(email=email)
+        db.add(user)
+    user.student_no, user.name, user.is_test = no, body.name.strip() or user.name, body.is_test
+    audit(db, admin, "add_test_user" if body.is_test else "add_user", f"{no} {email}")
+    await db.commit()
+    return {"student_no": no, "email": email, "is_test": body.is_test}
+
+
+@router.delete("/users/{student_no}", status_code=202)
+async def delete_test_student(student_no: str, admin: User = Depends(admin_user), db: AsyncSession = Depends(get_db)):
+    """테스트 계정만 지울 수 있다 (프로젝트·DB·이미지까지). 실제 학생은 프로젝트 삭제만 한다."""
+    user = await db.scalar(select(User).where(User.student_no == student_no))
+    if user is None:
+        raise not_found()
+    if not user.is_test:
+        raise APIError(403, "FORBIDDEN", "실제 학생 계정은 여기서 지울 수 없어요")
+    await enqueue("delete_project", student_no)
+    audit(db, admin, "delete_test_user", f"{student_no} {user.email}")
+    await db.delete(user)
+    await db.commit()
+    return {"ok": True}
 
 
 @router.get("/users")

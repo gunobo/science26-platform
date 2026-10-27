@@ -93,7 +93,21 @@ def test_login_rate_limited_per_ip(client, monkeypatch):
 
     monkeypatch.setattr(security, "rate_limit", fake_rate_limit)
     monkeypatch.setattr("app.routers.auth.redis.set", lambda *a, **k: _noop())
-    statuses = [client.get("/api/v1/auth/google/login", follow_redirects=False).status_code for _ in range(302)]
+
+    from app.db import get_db
+
+    class NoDB:
+        async def scalar(self, *a, **k):
+            return None
+
+    async def fake_db():
+        yield NoDB()
+
+    app.dependency_overrides[get_db] = fake_db
+    try:
+        statuses = [client.get("/api/v1/auth/google/login", follow_redirects=False).status_code for _ in range(302)]
+    finally:
+        app.dependency_overrides.pop(get_db, None)
     assert statuses[0] == 307 and statuses[299] == 307 and statuses[-1] == 429
 
 

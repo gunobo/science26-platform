@@ -177,6 +177,11 @@ const STATUS: Record<string, [string, keyof Theme, keyof Theme]> = {
   deploying: ['배포 중', 'warn', 'warnSoft'],
   active: ['서비스 중', 'ok', 'okSoft'],
   superseded: ['이전 버전', 'textMuted', 'surfaceAlt'],
+  // 관리자 학생 현황
+  deployed: ['제출 완료', 'ok', 'okSoft'],
+  no_upload: ['미제출', 'warn', 'warnSoft'],
+  not_logged_in: ['미접속', 'danger', 'dangerSoft'],
+  test: ['테스트', 'textMuted', 'surfaceAlt'],
 };
 
 export function Badge({ status, label }: { status: string; label?: string }) {

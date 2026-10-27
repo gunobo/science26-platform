@@ -73,6 +73,8 @@ class User(Base):
     name: Mapped[str] = mapped_column(Text, default="")
     role: Mapped[Role] = mapped_column(_enum(Role, "user_role"), default=Role.student)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # 관리자가 만든 테스트 학생 계정. 학교 도메인이 아니어도 학생으로 로그인할 수 있다
+    is_test: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
