@@ -48,6 +48,11 @@ async def my_project(user: User = Depends(mapped_student), db: AsyncSession = De
     return project_out(project, active, latest)
 
 
+def _norm(text: str) -> str:
+    # 브라우저 입력칸은 \r\n 을 \n 으로 바꿔 돌려주므로, 저장·비교 전에 줄바꿈을 맞춘다
+    return text.replace("\r\n", "\n").replace("\r", "\n").strip()
+
+
 @router.patch("")
 async def update_project(
     title: str | None = Form(None),
@@ -60,11 +65,11 @@ async def update_project(
 ):
     s = get_settings()
     project = await get_or_create_project(db, user)
-    before = {"title": project.title, "description": project.description, "slug": project.slug, "listed": project.listed}
+    before = {"title": project.title, "description": _norm(project.description), "slug": project.slug, "listed": project.listed}
     if title is not None:
         project.title = title.strip()[:100]
     if description is not None:
-        project.description = description.strip()[:2000]
+        project.description = _norm(description)[:2000]
     if listed is not None:
         project.listed = listed
 
@@ -94,8 +99,8 @@ async def update_project(
         project.thumbnail_path = str(path)
 
     changed = [name for name, on in (
-        ("제목", title is not None and title.strip()[:100] != before["title"]),
-        ("설명", description is not None and description.strip()[:2000] != before["description"]),
+        (f"제목: {before['title'] or '(없음)'} → {project.title}", project.title != before["title"]),
+        ("설명", project.description != before["description"]),
         (f"링크 이름 {before['slug']} → {project.slug}", slug_changed),
         ("썸네일", thumbnail is not None and bool(thumbnail.filename)),
         ("전시관 " + ("공개" if project.listed else "숨김"), listed is not None and listed != before["listed"]),

@@ -240,3 +240,11 @@ def test_students_export_xlsx(client, monkeypatch):
     assert [d[3] for d in data] == ["1402", "1403"]          # 1학년 4반의 미제출·미접속만, 테스트 계정 제외
     assert data[0][4] == "'=HYPERLINK(\"x\")"                 # 수식으로 실행되지 않게
     assert bad.status_code == 422
+
+
+def test_project_patch_route_and_newline_normalization():
+    from app.routers import projects
+
+    routes = {(r.path, tuple(r.methods)): r.endpoint.__name__ for r in projects.router.routes}
+    assert routes[("/projects/me", ("PATCH",))] == "update_project"
+    assert projects._norm("가\r\n나\r다 ") == "가\n나\n다"
