@@ -5,6 +5,7 @@ import json
 import logging
 import re
 import shutil
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -17,7 +18,7 @@ from app import settings_store
 from app.config import get_settings
 from app.db import SessionLocal
 from app.notify import send as send_discord
-from app.models import EnvVar, Project, ProjectStatus, ProjectType, Release, ReleaseState, SourceKind
+from app.models import EnvVar, Project, ProjectStatus, ProjectType, Release, ReleaseState, Role, SourceKind, User
 from app.queue import redis_settings, release_project_lock
 from app.redis_client import redis
 from app.security import decrypt
@@ -410,6 +411,23 @@ async def delete_project(ctx, student_no: str) -> None:
         await release_project_lock(student_no)
 
 
+async def delete_account(ctx, student_no: str, user_id: str) -> None:
+    """계정 삭제: 프로젝트(스택·이미지·DB·파일·조회수)를 먼저 정리하고 계정을 지운다.
+
+    계정을 먼저 지우면 프로젝트 행이 같이 사라져 업로드 파일·썸네일 위치를 잃는다.
+    """
+    try:
+        await _delete_project(student_no)
+        async with SessionLocal() as db:
+            user = await db.get(User, uuid.UUID(user_id))
+            if user is not None and user.role != Role.admin:
+                await db.delete(user)
+                await db.commit()
+        # 남아 있는 로그인 세션은 사용자 조회에 실패해 자연히 끊긴다
+    finally:
+        await release_project_lock(student_no)
+
+
 async def _delete_project(student_no: str) -> None:
     for p in await d.list_projects(f"stu-{student_no}-v"):
         await d.down_project(p["Name"])
@@ -621,7 +639,10 @@ async def startup(ctx) -> None:
 
 
 class WorkerSettings:
-    functions = [build_release, deploy_existing, stop_project, start_project, runtime_logs, delete_project, send_notification]
+    functions = [
+        build_release, deploy_existing, stop_project, start_project, runtime_logs, delete_project, delete_account,
+        send_notification,
+    ]
     cron_jobs = [
         cron(track_requests, second={0, 30}),
         cron(sleep_idle, minute=set(range(0, 60, 2)), second=15),

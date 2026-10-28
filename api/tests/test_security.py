@@ -384,3 +384,50 @@ def test_redeploy_all_skips_busy_and_blocks_double_click(monkeypatch):
     assert r.status_code == 202 and r.json() == {"queued": ["1201", "1203"], "skipped": ["1202"]}
     assert [j for j, _ in jobs] == ["deploy_existing", "deploy_existing"]
     assert again.status_code == 409
+
+
+def test_delete_student_requires_confirm_and_protects_admins(monkeypatch):
+    import uuid
+
+    from app.db import get_db
+    from app.models import Role
+    from app.routers import admin
+    from app.security import admin_user
+
+    me = type("U", (), {"id": uuid.uuid4(), "role": Role.admin})()
+    users = {
+        "1411": type("U", (), {"id": uuid.uuid4(), "role": Role.student, "is_test": False, "name": "김하린", "email": "s1411@bssm.hs.kr"})(),
+        "1203": type("U", (), {"id": uuid.uuid4(), "role": Role.admin, "is_test": False, "name": "관리자", "email": "t@bssm.hs.kr"})(),
+    }
+    current = {"no": None}
+
+    class DB:
+        def add(self, *_): ...
+        async def scalar(self, q): return users.get(current["no"])
+        async def commit(self): ...
+
+    async def fake_db():
+        yield DB()
+
+    jobs = []
+
+    async def fake_lock(no, owner): ...
+    async def fake_enqueue(job, *args): jobs.append((job, args))
+
+    monkeypatch.setattr(admin, "acquire_project_lock", fake_lock)
+    monkeypatch.setattr(admin, "enqueue", fake_enqueue)
+    app.dependency_overrides[admin_user] = lambda: me
+    app.dependency_overrides[get_db] = fake_db
+    h = {**H, "Origin": UPLOAD}
+    try:
+        c = TestClient(app)
+        current["no"] = "1411"
+        wrong = c.delete("/api/v1/admin/users/1411?confirm=1412", headers=h)
+        ok = c.delete("/api/v1/admin/users/1411?confirm=1411", headers=h)
+        current["no"] = "1203"
+        adm = c.delete("/api/v1/admin/users/1203?confirm=1203", headers=h)
+    finally:
+        app.dependency_overrides.clear()
+    assert wrong.status_code == 400
+    assert ok.status_code == 202 and jobs == [("delete_account", ("1411", str(users["1411"].id)))]
+    assert adm.status_code == 403

@@ -242,7 +242,7 @@ export const layout = { maxWidth: 1180, gutter: 20 };
 
 /** 화면 가운데 확인 창. 위험하거나 오래 걸리는 작업 전에 쓴다. */
 export function ConfirmDialog({
-  open, title, children, confirmLabel, cancelLabel = '취소', danger, busy, onConfirm, onCancel,
+  open, title, children, confirmLabel, cancelLabel = '취소', danger, busy, confirmDisabled, onConfirm, onCancel,
 }: {
   open: boolean;
   title: string;
@@ -251,6 +251,7 @@ export function ConfirmDialog({
   cancelLabel?: string;
   danger?: boolean;
   busy?: boolean;
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -276,7 +277,7 @@ export function ConfirmDialog({
         <View style={{ gap: 8 }}>{children}</View>
         <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
           <Button label={cancelLabel} kind="ghost" onPress={onCancel} disabled={busy} />
-          <Button label={confirmLabel} kind={danger ? 'danger' : 'primary'} busy={busy} onPress={onConfirm} />
+          <Button label={confirmLabel} kind={danger ? 'danger' : 'primary'} busy={busy} disabled={confirmDisabled} onPress={onConfirm} />
         </View>
       </View>
     </View>

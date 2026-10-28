@@ -18,7 +18,7 @@ from app import settings_store
 from app.config import get_settings
 from app.db import get_db
 from app.errors import APIError, not_found, upload_invalid
-from app.models import AuditLog, Project, Release, User
+from app.models import AuditLog, Project, Release, Role, User
 from app.queue import acquire_project_lock, claim_runtime_action, enqueue, lock_key
 from app.redis_client import redis
 from app.security import admin_user, audit
@@ -153,6 +153,7 @@ async def _student_rows(db: AsyncSession) -> list[dict]:
             "logged_in": user.last_login_at is not None,
             # 자동 점검(E2E) 계정은 예전 버전에서 is_test 없이 만들어졌을 수 있다
             "is_test": user.is_test or user.email.endswith("@science26.local"),
+            "is_admin": user.role == Role.admin,
             "state": state,
             "project": None if project is None else {
                 "slug": project.slug, "title": project.title, "type": project.type.value if project.type else None,
@@ -289,17 +290,25 @@ async def add_student(body: StudentIn, admin: User = Depends(admin_user), db: As
 
 
 @router.delete("/users/{student_no}", status_code=202)
-async def delete_test_student(student_no: str, admin: User = Depends(admin_user), db: AsyncSession = Depends(get_db)):
-    """테스트 계정만 지울 수 있다 (프로젝트·DB·이미지까지). 실제 학생은 프로젝트 삭제만 한다."""
+async def delete_student(
+    student_no: str,
+    confirm: str = Query(..., description="실수 방지: 지울 학번을 한 번 더"),
+    admin: User = Depends(admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """학생 계정과 그 프로젝트(페이지·DB·파일·조회수)를 모두 지운다. 관리자 계정은 지울 수 없다."""
+    if confirm != student_no:
+        raise APIError(400, "CONFIRM_MISMATCH", "확인용 학번이 맞지 않아요")
     user = await db.scalar(select(User).where(User.student_no == student_no))
     if user is None:
         raise not_found()
-    if not user.is_test:
-        raise APIError(403, "FORBIDDEN", "실제 학생 계정은 여기서 지울 수 없어요")
-    await enqueue("delete_project", student_no)
-    audit(db, admin, "delete_test_user", f"{student_no} {user.email}")
-    await db.delete(user)
+    if user.role == Role.admin or user.id == admin.id:
+        raise APIError(403, "FORBIDDEN", "관리자 계정은 지울 수 없어요")
+    # 빌드·배포 중이면 기다리게 한다. 잠금은 워커가 삭제를 끝낸 뒤 푼다.
+    await acquire_project_lock(student_no, "delete-account")
+    audit(db, admin, "delete_test_user" if user.is_test else "delete_user", f"{student_no} {user.name} {user.email}")
     await db.commit()
+    await enqueue("delete_account", student_no, str(user.id))
     return {"ok": True}
 
 
@@ -334,7 +343,7 @@ async def put_settings(
 ACTIVITY_KINDS = {
     "login": ["first_login"],
     "project": ["register", "upload", "update_info", "rollback", "slug", "env", "stop", "start", "self_delete"],
-    "admin": ["admin_stop", "delete", "import_users", "settings", "redeploy_all", "add_user", "add_test_user", "delete_test_user"],
+    "admin": ["admin_stop", "delete", "import_users", "settings", "redeploy_all", "add_user", "add_test_user", "delete_test_user", "delete_user"],
 }
 TODAY_ACTIONS = ["first_login", "register", "upload", "update_info"]
 KST = ZoneInfo("Asia/Seoul")

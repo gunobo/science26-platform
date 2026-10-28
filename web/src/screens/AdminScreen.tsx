@@ -60,6 +60,7 @@ type StudentRow = {
   email: string;
   logged_in: boolean;
   is_test: boolean;
+  is_admin?: boolean;
   state: 'deployed' | 'building' | 'failed' | 'no_upload' | 'not_logged_in';
   project: { slug: string; title: string; type: string | null; status: string; url: string | null } | null;
 };
@@ -110,15 +111,35 @@ function StudentsCard() {
   const done = inRoom.filter((s) => s.state === 'deployed').length;
   const notIn = inRoom.filter((s) => s.state === 'not_logged_in').length;
 
-  const removeTest = async (s: StudentRow) => {
-    if (!window.confirm(`테스트 계정 ${s.student_no} ${s.email} 과 그 프로젝트를 모두 지울까요?`)) return;
+  // 계정 삭제: 확인 창에서 학번을 입력해야 진행, 지워질 때까지 카드는 스켈레톤
+  const [toDelete, setToDelete] = useState<StudentRow | null>(null);
+  const [confirmNo, setConfirmNo] = useState('');
+  const [deleting, setDeleting] = useState<string[]>([]);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const removeAccount = async () => {
+    if (!toDelete) return;
+    const no = toDelete.student_no;
+    setDeleteBusy(true);
     try {
-      await api(`/admin/users/${s.student_no}`, { method: 'DELETE' });
-      load();
+      await api(`/admin/users/${no}?confirm=${encodeURIComponent(confirmNo.trim())}`, { method: 'DELETE' });
+      setDeleting((d) => [...d, no]);
+      setToDelete(null);
+      setConfirmNo('');
     } catch (e: any) {
       setError(e.message);
+      setToDelete(null);
+    } finally {
+      setDeleteBusy(false);
     }
   };
+  useEffect(() => {
+    if (!deleting.length) return;
+    const still = deleting.filter((no) => rows?.some((r) => r.student_no === no));
+    if (still.length !== deleting.length) setDeleting(still);
+    if (!still.length) return;
+    const id = setInterval(load, 2000);
+    return () => clearInterval(id);
+  }, [deleting, rows, load]);
 
   const copyMissing = () => {
     const names = inRoom.filter(missing).map((s) => `${s.student_no} ${s.name}`).join('\n');
@@ -188,7 +209,18 @@ function StudentsCard() {
             <T variant="sub">{filter === 'missing' ? '이 반은 모두 제출했어요.' : '해당하는 학생이 없어요.'}</T>
           ) : (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4 }}>
-              {shown.map((s) => (
+              {shown.map((s) => deleting.includes(s.student_no) ? (
+                <View key={s.student_no} style={{ width: `${100 / cols}%`, padding: 4 }}>
+                  <View style={{ backgroundColor: t.surfaceAlt, borderRadius: radius.control, padding: 10, gap: 8 }} accessibilityState={{ busy: true }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <T variant="heading" style={{ fontSize: 14.5 }}>{s.student_no}</T>
+                      <T style={{ color: t.text }} numberOfLines={1}>{s.name || '-'}</T>
+                      <T variant="small" style={{ color: t.danger, fontWeight: '700' }}>삭제하는 중…</T>
+                    </View>
+                    <Skeleton h={12} w="70%" />
+                  </View>
+                </View>
+              ) : (
                 <View key={s.student_no} style={{ width: `${100 / cols}%`, padding: 4 }}>
                   <View style={{ backgroundColor: t.surfaceAlt, borderRadius: radius.control, padding: 10, gap: 4 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -196,12 +228,17 @@ function StudentsCard() {
                       <T style={{ color: t.text, flex: 1 }} numberOfLines={1}>{s.name || '-'}</T>
                       {s.is_test && <Badge status="test" label="테스트" />}
                       <Badge status={s.state} />
+                      {!s.is_admin && (
+                        <Pressable
+                          onPress={() => { setConfirmNo(''); setToDelete(s); }}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${s.student_no} ${s.name} 계정 삭제`}
+                          style={({ hovered }: any) => ({ padding: 4, borderRadius: 6, backgroundColor: hovered ? t.dangerSoft : 'transparent' })}
+                        >
+                          <Trash size={15} color={t.textMuted} />
+                        </Pressable>
+                      )}
                     </View>
-                    {s.is_test && (
-                      <View style={{ alignSelf: 'flex-start' }}>
-                        <Button label="계정 삭제" kind="ghost" small icon={Trash} onPress={() => removeTest(s)} />
-                      </View>
-                    )}
                     {s.project?.url ? (
                       <Pressable onPress={() => Linking.openURL(s.project!.url!)}>
                         <T variant="small" numberOfLines={1} style={{ color: t.accent }}>{s.project.title || `/${s.project.slug}`}</T>
@@ -216,6 +253,36 @@ function StudentsCard() {
           )}
         </>
       )}
+      <ConfirmDialog
+        open={!!toDelete}
+        title="정말 이 계정을 삭제하시겠어요?"
+        confirmLabel="영구 삭제"
+        danger
+        busy={deleteBusy}
+        confirmDisabled={!toDelete || confirmNo.trim() !== toDelete.student_no}
+        onConfirm={removeAccount}
+        onCancel={() => setToDelete(null)}
+      >
+        {toDelete && (
+          <>
+            <T>
+              <Text style={{ fontWeight: '800' }}>{toDelete.student_no} {toDelete.name}</Text> ({toDelete.email})
+            </T>
+            <T variant="sub">계정과 프로젝트, 배포된 페이지, 학생 DB 데이터, 올린 파일, 조회수가 모두 지워지고 되돌릴 수 없어요. 다시 쓰려면 학번을 새로 등록해야 해요.</T>
+            <Field
+              label={`확인을 위해 학번 ${toDelete.student_no} 을(를) 입력하세요`}
+              value={confirmNo}
+              onChangeText={setConfirmNo}
+              keyboardType="number-pad"
+              placeholder={toDelete.student_no}
+              autoFocus
+            />
+            {confirmNo.trim() !== toDelete.student_no && confirmNo.length >= 4 && (
+              <T variant="small" style={{ color: t.danger }}>학번이 맞지 않아요</T>
+            )}
+          </>
+        )}
+      </ConfirmDialog>
     </Card>
   );
 }
@@ -608,6 +675,7 @@ const ACTIONS: Record<string, { label: string; kind: Exclude<Kind, 'all'>; icon:
   add_user: { label: '학생 추가', kind: 'admin', icon: UserPlus },
   add_test_user: { label: '테스트 계정 추가', kind: 'admin', icon: UserPlus },
   delete_test_user: { label: '테스트 계정 삭제', kind: 'admin', icon: Trash },
+  delete_user: { label: '학생 계정 삭제', kind: 'admin', icon: Trash },
 };
 
 function ago(iso: string) {
