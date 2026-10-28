@@ -21,7 +21,7 @@ from app.models import EnvVar, Project, ProjectStatus, ProjectType, Release, Rel
 from app.queue import redis_settings, release_project_lock
 from app.redis_client import redis
 from app.security import decrypt
-from app.services import buildlog, docker_ops as d, provision
+from app.services import buildlog, docker_ops as d, provision, visits
 from app.services import validation as v
 from app.services.app_page import build_site
 from app.services.compose import (
@@ -427,6 +427,7 @@ async def _delete_project(student_no: str) -> None:
             await db.delete(project)
             await db.commit()
     await redis.delete(f"stats:{student_no}", f"deployseq:{student_no}")
+    await visits.forget(student_no)
 
 
 # ---- 주기 작업 ----

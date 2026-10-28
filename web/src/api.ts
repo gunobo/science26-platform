@@ -55,6 +55,7 @@ export type Release = {
 export type ProjectType = 'static' | 'fullstack' | 'app';
 export type ProjectStatus = 'empty' | 'building' | 'running' | 'sleeping' | 'stopped' | 'failed';
 export type Project = {
+  visits?: { total: number; today: number };
   student_no: string;
   slug: string;
   type: ProjectType | null;
@@ -78,5 +79,6 @@ export type PublicCard = {
   status: ProjectStatus;
   thumbnail_url: string | null;
   url: string;
+  views?: number;
 };
 export type Warning = { code: string; message: string; paths?: string[] };

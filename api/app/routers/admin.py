@@ -22,6 +22,7 @@ from app.models import AuditLog, Project, Release, User
 from app.queue import claim_runtime_action, enqueue
 from app.redis_client import redis
 from app.security import admin_user, audit
+from app.services import visits
 from app.services.projects import project_out, student_url
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -32,6 +33,8 @@ async def all_projects(_: User = Depends(admin_user), db: AsyncSession = Depends
     rows = await db.execute(
         select(Project, User).join(User, User.id == Project.owner_id).order_by(Project.student_no)
     )
+    rows = rows.all()
+    visit_counts = await visits.counts([p.student_no for p, _ in rows])
     out = []
     for project, owner in rows:
         active = await db.get(Release, project.active_release_id) if project.active_release_id else None
@@ -39,6 +42,7 @@ async def all_projects(_: User = Depends(admin_user), db: AsyncSession = Depends
         out.append({
             **project_out(project, active),
             "owner": {"email": owner.email, "name": owner.name},
+            "visits": visit_counts.get(project.student_no, {"total": 0, "today": 0}),
             "stats": json.loads(stats) if stats else None,
         })
     return out

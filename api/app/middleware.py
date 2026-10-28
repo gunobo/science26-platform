@@ -13,6 +13,7 @@ from app.security import SESSION_COOKIE
 
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 CSRF_HEADER = b"x-s26-request"
+VISIT_PATH = "/api/v1/public/visit"
 
 # 경로 → 허용 최대 본문 (바이트). 나머지 API 요청은 DEFAULT_MAX.
 UPLOAD_LIMITS = {
@@ -42,7 +43,10 @@ class SecurityGuard:
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] != "http" or not scope["path"].startswith("/api/") or scope["method"] not in UNSAFE:
+        if (
+            scope["type"] != "http" or not scope["path"].startswith("/api/") or scope["method"] not in UNSAFE
+            or scope["path"] == VISIT_PATH  # Traefik forwardAuth (본문 없음, 원래 요청 메서드 그대로 옴)
+        ):
             return await self.app(scope, receive, send)
 
         headers = {k.lower(): v for k, v in scope["headers"]}

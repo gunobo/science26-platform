@@ -248,3 +248,84 @@ def test_project_patch_route_and_newline_normalization():
     routes = {(r.path, tuple(r.methods)): r.endpoint.__name__ for r in projects.router.routes}
     assert routes[("/projects/me", ("PATCH",))] == "update_project"
     assert projects._norm("가\r\n나\r다 ") == "가\n나\n다"
+
+
+class _FakeRedis:
+    def __init__(self):
+        self.d: dict[str, str] = {}
+
+    async def get(self, k):
+        return self.d.get(k)
+
+    async def set(self, k, v, nx=False, ex=None):
+        if nx and k in self.d:
+            return None
+        self.d[k] = str(v)
+        return True
+
+    async def incr(self, k):
+        self.d[k] = str(int(self.d.get(k, 0)) + 1)
+        return int(self.d[k])
+
+    async def expire(self, k, s):
+        return True
+
+    async def mget(self, keys):
+        return [self.d.get(k) for k in keys]
+
+    def pipeline(self):
+        outer = self
+
+        class P:
+            def __init__(self):
+                self.ops = []
+
+            def incr(self, k):
+                self.ops.append(("incr", k))
+
+            def expire(self, k, s):
+                pass
+
+            async def execute(self):
+                for _, k in self.ops:
+                    await outer.incr(k)
+
+        return P()
+
+
+def test_visit_counts_once_per_session(monkeypatch):
+    from app.db import get_db
+    from app.services import visits
+
+    fake = _FakeRedis()
+    monkeypatch.setattr(visits, "redis", fake)
+
+    async def fake_no(db, slug):
+        return "1411" if slug == "orbital" else None
+
+    monkeypatch.setattr(visits, "student_no_for", fake_no)
+
+    async def nodb():
+        yield None
+
+    app.dependency_overrides[get_db] = nodb
+    ua = {"User-Agent": "Mozilla/5.0 Chrome/130", "X-Forwarded-Uri": "/students/orbital/"}
+    try:
+        c1 = TestClient(app)
+        r = c1.get("/api/v1/public/visit", headers=ua)
+        assert r.status_code == 200 and "__Host-s26v=" in r.headers["set-cookie"]
+        assert "HttpOnly" in r.headers["set-cookie"] and "Secure" in r.headers["set-cookie"]
+        vid = r.cookies.get("__Host-s26v") or r.headers["set-cookie"].split("=", 1)[1].split(";")[0]
+        same = {**ua, "Cookie": f"__Host-s26v={vid}"}
+        c1.get("/api/v1/public/visit", headers=same)                      # 같은 세션 새로고침
+        c1.get("/api/v1/public/visit", headers={**same, "X-Forwarded-Uri": "/students/orbital/level2"})
+        TestClient(app).get("/api/v1/public/visit", headers=ua)           # 다른 브라우저(새 세션)
+        TestClient(app).get("/api/v1/public/visit", headers={**ua, "User-Agent": "Googlebot/2.1"})
+        post = TestClient(app).post("/api/v1/public/visit", headers=ua)   # 폼 POST 페이지 이동도 막지 않음
+        bad = TestClient(app).get("/api/v1/public/visit", headers={**ua, "X-Forwarded-Uri": "/students/nobody/"})
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+    assert post.status_code == 200 and bad.status_code == 200
+    import asyncio
+    # 새 세션 3번(c1, 다른 브라우저, POST) - 로봇 제외
+    assert asyncio.run(visits.counts(["1411"]))["1411"]["total"] == 3

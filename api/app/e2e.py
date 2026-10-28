@@ -151,7 +151,24 @@ class E2E:
             return None
         code, text = await self.page_text()
         record("정적 페이지 열림", code == 200 and STATIC_MARK in text, f"HTTP {code}")
+        await self.visits()
         return rid
+
+    async def visits(self) -> None:
+        """페이지 이동(Sec-Fetch-Dest: document)만 세고, 같은 세션은 한 번만 센다."""
+        nav = {"Sec-Fetch-Dest": "document", "User-Agent": "Mozilla/5.0 (science26-e2e) Chrome/130"}
+        before = (await self.api.get("/projects/me")).json().get("visits", {}).get("total", 0)
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as browser_a:
+            r = await browser_a.get(self.page, headers=nav)
+            got_cookie = "__Host-s26v" in browser_a.cookies
+            await browser_a.get(self.page, headers=nav)          # 새로고침 (같은 세션)
+            await browser_a.get(self.page + "style.css")          # 일반 요청은 세지 않음
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as browser_b:
+            await browser_b.get(self.page, headers=nav)          # 다른 브라우저
+        await asyncio.sleep(1)
+        after = (await self.api.get("/projects/me")).json().get("visits", {}).get("total", 0)
+        record("방문 세션 쿠키 발급", r.status_code == 200 and got_cookie)
+        record("방문자 수 (세션당 1번)", after - before == 2, f"{before} → {after}")
 
     async def fullstack(self) -> bool:
         src = Path("/examples/fullstack-test")

@@ -106,6 +106,7 @@ function PreviewCard({ me, project, onChange }: { me: Me; project: Project; onCh
               status: project.status,
               thumbnail_url: project.thumbnail_url,
               url: project.url ?? '',
+              views: project.visits?.total,
             }}
           />
         </View>

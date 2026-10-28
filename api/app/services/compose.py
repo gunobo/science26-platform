@@ -33,8 +33,9 @@ def escape_interpolation(spec: dict) -> dict:
     """compose 파일에 쓰기 직전에 모든 $ 를 $$ 로 바꿔 docker compose 가 변수 치환을 하지 않게 한다."""
     return _walk(spec, lambda s: s.replace("$", "$$"))
 
-# infra/traefik/dynamic/students.yml 에 정의된 학생 응답 헤더 필터
+# infra/traefik/dynamic/students.yml 에 정의된 학생 응답 헤더 필터·방문 집계
 STUDENT_HEADERS = "student-response-headers@file"
+STUDENT_VISIT = "student-visit@file"
 
 FRONT_PRIORITY_BASE = 1_000
 API_PRIORITY_BASE = 1_000_000
@@ -71,8 +72,9 @@ def traefik_labels(
         "traefik.enable": "true",
         "traefik.docker.network": edge_network,
         f"traefik.http.routers.{name}.rule": f"Host(`{public_host}`) && PathPrefix(`{prefix}`)",
+        # 화면 라우터는 2*seq, 그 '페이지 열기' 라우터는 2*seq+1 (같은 버전 안에서만 앞서게)
         f"traefik.http.routers.{name}.priority": str(
-            (API_PRIORITY_BASE if api else FRONT_PRIORITY_BASE) + seq
+            API_PRIORITY_BASE + seq if api else FRONT_PRIORITY_BASE + 2 * seq
         ),
         f"traefik.http.routers.{name}.service": name,
         f"traefik.http.services.{name}.loadbalancer.server.port": str(port),
@@ -86,6 +88,15 @@ def traefik_labels(
         labels[f"traefik.http.middlewares.{name}-slash.redirectregex.permanent"] = "true"
         middlewares.insert(0, f"{name}-slash")
     labels[f"traefik.http.routers.{name}.middlewares"] = ",".join(middlewares)
+    if not api:
+        # 같은 경로의 페이지 이동만 따로 받아 방문을 센다 (응답은 같은 서비스가 그대로 돌려준다)
+        doc = f"{name}-doc"
+        labels[f"traefik.http.routers.{doc}.rule"] = (
+            f"Host(`{public_host}`) && PathPrefix(`{prefix}`) && Header(`Sec-Fetch-Dest`, `document`)"
+        )
+        labels[f"traefik.http.routers.{doc}.priority"] = str(FRONT_PRIORITY_BASE + 2 * seq + 1)
+        labels[f"traefik.http.routers.{doc}.service"] = name
+        labels[f"traefik.http.routers.{doc}.middlewares"] = ",".join([STUDENT_VISIT, *middlewares])
     return labels
 
 

@@ -15,6 +15,13 @@ http:
       headers:
         customResponseHeaders:
           Service-Worker-Allowed: ""
+    # 학생 페이지를 '열 때'(Sec-Fetch-Dest: document)만 붙는다. API 가 세션 쿠키로 방문자를 센다.
+    # 이미지·JS·fetch 요청은 거치지 않는다.
+    student-visit:
+      forwardAuth:
+        address: "http://s26-api:8000/api/v1/public/visit"
+        authRequestHeaders: ["Cookie", "User-Agent"]
+        addAuthCookiesToResponse: ["__Host-s26v"]
     students-wake-rewrite:
       replacePathRegex:
         regex: "^/students/([a-z0-9-]{1,32}).*"

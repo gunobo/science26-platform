@@ -146,7 +146,13 @@ def test_rewrite(tmp_path):
     assert web["labels"]["traefik.http.routers.stu-1411-v3.rule"] == (
         "Host(`science26.bssm.dev`) && PathPrefix(`/students/space-runner`)"
     )
-    assert web["labels"]["traefik.http.routers.stu-1411-v3.priority"] == "1007"
+    assert web["labels"]["traefik.http.routers.stu-1411-v3.priority"] == "1014"  # 1000 + 2*seq
+    # 페이지 이동 전용 라우터: 같은 서비스, 방문 집계 미들웨어가 맨 앞, 화면 라우터보다 1 높음
+    doc = "traefik.http.routers.stu-1411-v3-doc"
+    assert web["labels"][f"{doc}.priority"] == "1015"
+    assert web["labels"][f"{doc}.service"] == "stu-1411-v3"
+    assert web["labels"][f"{doc}.middlewares"].startswith("student-visit@file,")
+    assert "Header(`Sec-Fetch-Dest`, `document`)" in web["labels"][f"{doc}.rule"]
     assert api["labels"]["traefik.http.routers.stu-1411-v3-api.priority"] == "1000007"
     assert api["environment"] == {"A": "1", "DATABASE_URL": "pg://x", "BASE_PATH": "/students/space-runner"}
     assert out["networks"]["default"] == {"name": "stu-1411-net", "external": True}

@@ -2,7 +2,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Linking, Pressable, ScrollView, Switch, Text, useWindowDimensions, View } from 'react-native';
 import {
-  AndroidLogo, ArrowCounterClockwise, ArrowUpRight, Browser, ClockCounterClockwise, Copy, DeviceMobile, FileZip, FilmStrip, GearSix,
+  AndroidLogo, ArrowCounterClockwise, Eye, ArrowUpRight, Browser, ClockCounterClockwise, Copy, DeviceMobile, FileZip, FilmStrip, GearSix,
   GithubLogo, Image as ImageIcon, Key, PencilSimple, Play, Plus, Robot, Stack, Stop, Terminal, Trash, UploadSimple,
 } from '@phosphor-icons/react';
 
@@ -91,6 +91,12 @@ function Hero({ project, onEditInfo }: { project: Project; onEditInfo: () => voi
         <T variant="title">{project.title || '내 프로젝트'}</T>
         <Badge status={project.status} />
         {!project.listed && project.active_release && <Badge status="empty" label="전시관에서 숨김" />}
+        {project.active_release && project.visits && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }} accessibilityLabel={`조회수 ${project.visits.total}, 오늘 ${project.visits.today}`}>
+            <Eye size={16} color={t.textMuted} weight="bold" />
+            <T variant="sub">조회수 {project.visits.total.toLocaleString('ko-KR')} · 오늘 {project.visits.today.toLocaleString('ko-KR')}</T>
+          </View>
+        )}
         <Button label="정보 수정" kind="ghost" small icon={PencilSimple} onPress={onEditInfo} />
       </View>
       {live ? (

@@ -1,8 +1,9 @@
 import html
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,10 +12,32 @@ from app.errors import not_found
 from app.models import Project, ProjectStatus, User
 from app.redis_client import redis
 from app.queue import enqueue
-from app.security import ip_rate_limit
+from app.security import client_ip, ip_rate_limit
+from app.services import visits
 from app.services.projects import base_path, project_out, thumbnail_url
 
 router = APIRouter(prefix="/public", tags=["public"])
+log = logging.getLogger(__name__)
+
+
+@router.api_route("/visit", methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], include_in_schema=False)
+async def visit(request: Request, db: AsyncSession = Depends(get_db)):
+    """Traefik forwardAuth: 학생 페이지를 열 때마다 불린다. 무슨 일이 있어도 200 을 돌려줘 페이지를 막지 않는다."""
+    response = Response(status_code=200)
+    try:
+        vid = request.cookies.get(visits.COOKIE)
+        if not visits.valid_visitor_id(vid):
+            vid = visits.new_visitor_id()
+            # 만료 없음 = 브라우저 세션 쿠키. Traefik 이 이 쿠키를 학생 페이지 응답에 붙여 준다.
+            response.set_cookie(visits.COOKIE, vid, path="/", secure=True, httponly=True, samesite="lax")
+        m = visits.SLUG_RE.match(request.headers.get("x-forwarded-uri", ""))
+        if m:
+            no = await visits.student_no_for(db, m.group(1))
+            if no:
+                await visits.record(no, vid, client_ip(request), request.headers.get("user-agent", ""))
+    except Exception:
+        log.exception("방문 집계 실패")
+    return response
 
 
 @router.get("/projects")
@@ -26,6 +49,8 @@ async def public_projects(request: Request, db: AsyncSession = Depends(get_db)):
         .where(Project.active_release_id.is_not(None), Project.listed.is_(True))
         .order_by(Project.student_no)
     )
+    rows = rows.all()
+    views = await visits.counts([p.student_no for p, _ in rows])
     out = []
     for project, name in rows:
         card = project_out(project)
@@ -39,6 +64,7 @@ async def public_projects(request: Request, db: AsyncSession = Depends(get_db)):
             "status": card["status"],
             "thumbnail_url": thumbnail_url(project),
             "url": card["url"],
+            "views": views.get(project.student_no, {}).get("total", 0),
         })
     return out
 

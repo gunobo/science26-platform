@@ -22,6 +22,7 @@ from app.queue import acquire_project_lock, claim_runtime_action, enqueue, relea
 from app.notify import activity
 from app.security import audit, decrypt, encrypt, mapped_student, rate_limit
 from app.services import validation as v
+from app.services import visits
 from app.services.projects import student_url, get_or_create_project, get_project, next_version, project_out, release_out
 
 router = APIRouter(prefix="/projects/me", tags=["projects"])
@@ -38,14 +39,16 @@ async def my_project(user: User = Depends(mapped_student), db: AsyncSession = De
     if project is None:
         return {"student_no": user.student_no, "slug": user.student_no, "status": "empty", "type": None, "listed": True,
                 "title": "", "description": "", "thumbnail_url": None, "active_release": None,
-                "latest_release": None, "url": None, "last_request_at": None}
+                "latest_release": None, "url": None, "last_request_at": None, "visits": {"total": 0, "today": 0}}
     active = await db.get(Release, project.active_release_id) if project.active_release_id else None
     latest = (
         await db.execute(
             select(Release).where(Release.project_id == project.id).order_by(Release.version.desc()).limit(1)
         )
     ).scalar_one_or_none()
-    return project_out(project, active, latest)
+    out = project_out(project, active, latest)
+    out["visits"] = (await visits.counts([project.student_no]))[project.student_no]
+    return out
 
 
 def _norm(text: str) -> str:

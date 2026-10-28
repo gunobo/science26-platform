@@ -12,6 +12,7 @@ import { Badge, Button, Card, Field, FilePick, Icon, Notice, Segmented, Skeleton
 
 type AdminProject = Project & {
   owner: { email: string; name: string };
+  visits?: { total: number; today: number };
   stats: { cpu_percent: number; mem_bytes: number; containers: number; db_bytes?: number } | null;
 };
 type Settings = { upload_deadline: string | null; memory_mb: number; stack_memory_mb: number; cpus: number; pids: number };
@@ -334,7 +335,7 @@ function ProjectsCard() {
                 <T variant="sub" numberOfLines={1} style={{ color: t.accent }}>/{p.slug}  {p.title}</T>
               </Pressable>
               <T variant="small" style={{ fontFamily: font.mono }}>
-                CPU {p.stats ? `${p.stats.cpu_percent.toFixed(1)}%` : '-'}   MEM {mb(p.stats?.mem_bytes)}   DB {mb(p.stats?.db_bytes)}
+                조회 {p.visits?.total ?? 0}(오늘 {p.visits?.today ?? 0})   CPU {p.stats ? `${p.stats.cpu_percent.toFixed(1)}%` : '-'}   MEM {mb(p.stats?.mem_bytes)}   DB {mb(p.stats?.db_bytes)}
               </T>
               <Button label="중지" kind="secondary" small icon={Stop} disabled={p.status !== 'running' && p.status !== 'sleeping'} onPress={() => act(p, 'stop')} />
               <Button label="삭제" kind="danger" small icon={Trash} onPress={() => act(p, 'delete')} />

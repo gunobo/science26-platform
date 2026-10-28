@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Image, Linking, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
-import { ArrowUpRight, Browser, DeviceMobile, Flask, MagnifyingGlass, Stack, UploadSimple } from '@phosphor-icons/react';
+import { ArrowUpRight, Browser, DeviceMobile, Eye, Flask, MagnifyingGlass, Stack, UploadSimple } from '@phosphor-icons/react';
 
 import { api, PublicCard, UPLOAD_HOST } from '../api';
 import { font, radius, useTheme } from '../theme';
@@ -151,11 +151,20 @@ export function ProjectCard({ p, width }: { p: PublicCard; width: `${number}%` }
               {p.thumbnail_url ? (
                 <Image source={{ uri: p.thumbnail_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" accessibilityLabel={`${p.title} 썸네일`} />
               ) : (
-                <View style={{ flex: 1, padding: 22, justifyContent: 'space-between' }}>
+                <View style={{ flex: 1, padding: 22, paddingBottom: p.views != null ? 48 : 22, justifyContent: 'space-between' }}>
                   {type && <type.icon size={26} color={t.textMuted} weight="duotone" />}
                   <Text numberOfLines={2} style={{ fontFamily: font.family, fontSize: 30, lineHeight: 36, fontWeight: '800', letterSpacing: -0.8, color: t.textSub }}>
                     {p.title}
                   </Text>
+                </View>
+              )}
+              {p.views != null && (
+                <View
+                  accessibilityLabel={`조회수 ${p.views}`}
+                  style={{ position: 'absolute', right: 12, bottom: 12, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(24,24,27,0.72)', borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4 }}
+                >
+                  <Eye size={14} color="#f4f4f5" weight="bold" />
+                  <Text style={{ fontFamily: font.family, color: '#f4f4f5', fontSize: 12.5, fontWeight: '700' }}>{p.views.toLocaleString('ko-KR')}</Text>
                 </View>
               )}
               {p.status === 'sleeping' && (
