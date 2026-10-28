@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.errors import not_found
-from app.models import Project, ProjectStatus, User
+from app.models import Project, ProjectStatus, Release, User
 from app.redis_client import redis
 from app.queue import enqueue
 from app.security import client_ip, ip_rate_limit
@@ -44,15 +44,18 @@ async def visit(request: Request, db: AsyncSession = Depends(get_db)):
 async def public_projects(request: Request, db: AsyncSession = Depends(get_db)):
     await ip_rate_limit(request, "public", limit=1200)
     rows = await db.execute(
-        select(Project, User.name)
+        select(Project, User.name, Release.finished_at, Release.created_at)
         .join(User, User.id == Project.owner_id)
+        .join(Release, Release.id == Project.active_release_id)
         .where(Project.active_release_id.is_not(None), Project.listed.is_(True))
         .order_by(Project.student_no)
     )
     rows = rows.all()
-    views = await visits.counts([p.student_no for p, _ in rows])
+    nos = [r[0].student_no for r in rows]
+    views = await visits.counts(nos)
+    hot = await visits.hot_scores(nos)
     out = []
-    for project, name in rows:
+    for project, name, finished_at, created_at in rows:
         card = project_out(project)
         out.append({
             "student_no": project.student_no,
@@ -65,6 +68,8 @@ async def public_projects(request: Request, db: AsyncSession = Depends(get_db)):
             "thumbnail_url": thumbnail_url(project),
             "url": card["url"],
             "views": views.get(project.student_no, {}).get("total", 0),
+            "hot": hot.get(project.student_no, 0),
+            "updated_at": finished_at or created_at,
         })
     return out
 

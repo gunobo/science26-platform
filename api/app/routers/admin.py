@@ -90,20 +90,20 @@ async def students_export(
     wb = Workbook()
     ws = wb.active
     ws.title = filter_label
-    headers = ["학년", "반", "번호", "학번", "이름", "이메일", "상태", "로그인 여부", "프로젝트 제목", "주소"]
+    headers = ["학년", "반", "번호", "학번", "이름", "이메일", "상태", "로그인 여부", "프로젝트 제목", "주소", "메모"]
     ws.append(headers)
     for r in rows:
         p = r["project"] or {}
         ws.append([_cell(v) for v in (
             int(r["grade"]), int(r["class"]), int(r["number"]), r["student_no"], r["name"], r["email"],
-            STATE_LABELS.get(r["state"], r["state"]), "O" if r["logged_in"] else "X", p.get("title") or "", p.get("url") or "",
+            STATE_LABELS.get(r["state"], r["state"]), "O" if r["logged_in"] else "X", p.get("title") or "", p.get("url") or "", r["memo"],
         )])
     head_fill = PatternFill("solid", fgColor="064E3B")
     for c in ws[1]:
         c.font = Font(bold=True, color="FFFFFF")
         c.fill = head_fill
         c.alignment = Alignment(horizontal="center")
-    for col, width in zip("ABCDEFGHIJ", (6, 5, 6, 8, 12, 28, 10, 11, 28, 48)):
+    for col, width in zip("ABCDEFGHIJK", (6, 5, 6, 8, 12, 28, 10, 11, 28, 48, 40)):
         ws.column_dimensions[col].width = width
     ws.freeze_panes = "A2"
     if rows:
@@ -154,6 +154,7 @@ async def _student_rows(db: AsyncSession) -> list[dict]:
             # 자동 점검(E2E) 계정은 예전 버전에서 is_test 없이 만들어졌을 수 있다
             "is_test": user.is_test or user.email.endswith("@science26.local"),
             "is_admin": user.role == Role.admin,
+            "memo": user.admin_memo,
             "state": state,
             "project": None if project is None else {
                 "slug": project.slug, "title": project.title, "type": project.type.value if project.type else None,
@@ -312,6 +313,24 @@ async def delete_student(
     return {"ok": True}
 
 
+class MemoIn(BaseModel):
+    memo: str
+
+
+@router.put("/users/{student_no}/memo")
+async def put_memo(student_no: str, body: MemoIn, _: User = Depends(admin_user), db: AsyncSession = Depends(get_db)):
+    """선생님만 보는 평가 메모. 학생에게는 보이지 않고, 활동 기록·알림도 남기지 않는다."""
+    memo = body.memo.strip()
+    if len(memo) > 2000:
+        raise upload_invalid("메모는 2000자까지 쓸 수 있어요")
+    user = await db.scalar(select(User).where(User.student_no == student_no))
+    if user is None:
+        raise not_found()
+    user.admin_memo = memo
+    await db.commit()
+    return {"student_no": student_no, "memo": memo}
+
+
 @router.get("/users")
 async def list_users(_: User = Depends(admin_user), db: AsyncSession = Depends(get_db)):
     rows = (await db.execute(select(User).order_by(User.student_no.nulls_last(), User.email))).scalars()
@@ -333,6 +352,9 @@ async def put_settings(
     if not (64 <= cfg.memory_mb <= 2048 and 64 <= cfg.stack_memory_mb <= 4096
             and 0.1 <= cfg.cpus <= 4 and 32 <= cfg.pids <= 1024):
         raise upload_invalid("리소스 한도 값이 허용 범위를 벗어났습니다")
+    cfg.notice = cfg.notice.strip()
+    if len(cfg.notice) > 300:
+        raise upload_invalid("공지는 300자까지 쓸 수 있어요")
     await settings_store.save(db, cfg)
     audit(db, admin, "settings", "")
     await db.commit()

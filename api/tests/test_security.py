@@ -213,7 +213,7 @@ def test_students_export_xlsx(client, monkeypatch):
 
     def row(no, name, state, test=False):
         return {"student_no": no, "grade": no[0], "class": no[1], "number": no[2:], "name": name,
-                "email": f"s{no}@bssm.hs.kr", "logged_in": state != "not_logged_in", "is_test": test,
+                "email": f"s{no}@bssm.hs.kr", "logged_in": state != "not_logged_in", "is_test": test, "memo": "",
                 "state": state, "project": None}
 
     async def fake_rows(db):
@@ -431,3 +431,20 @@ def test_delete_student_requires_confirm_and_protects_admins(monkeypatch):
     assert wrong.status_code == 400
     assert ok.status_code == 202 and jobs == [("delete_account", ("1411", str(users["1411"].id)))]
     assert adm.status_code == 403
+
+
+def test_notice_and_memo_need_login(client):
+    assert client.get("/api/v1/notice").status_code == 401
+    r = client.put("/api/v1/admin/users/1411/memo", json={"memo": "x"}, headers={**H, "Origin": UPLOAD})
+    assert r.status_code == 401
+
+
+def test_hot_score_prefers_recent_visits():
+    from app.services.visits import hot_score
+
+    recent = hot_score([10] + [0] * 13, 10)       # 오늘 10명
+    old = hot_score([0] * 10 + [10] + [0] * 3, 10)  # 10일 전 10명
+    assert recent > old
+    # 누적만 큰 프로젝트가 요즘 꾸준히 보는 프로젝트를 이기지 못한다
+    assert hot_score([8] * 7 + [0] * 7, 56) > hot_score([0] * 14, 500)
+    assert hot_score([0] * 14, 0) == 0

@@ -2,7 +2,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Linking, Pressable, Switch, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import {
-  ArrowClockwise, ArrowCounterClockwise, ArrowsClockwise, Bell, CaretLeft, CaretRight, ClipboardText, Copy, MicrosoftExcelLogo, Student, UserPlus, FileCsv, Key, MagnifyingGlass, PencilSimple, Play, SignIn,
+  ArrowClockwise, ArrowCounterClockwise, ArrowsClockwise, Bell, CaretLeft, CaretRight, ClipboardText, Copy, MicrosoftExcelLogo, Student, UserPlus, FileCsv, Key, MagnifyingGlass, NotePencil, PencilSimple, Play, SignIn,
   Sliders, Sparkle, Stop, Trash, UploadSimple, UsersThree,
 } from '@phosphor-icons/react';
 
@@ -16,7 +16,7 @@ type AdminProject = Project & {
   visits?: { total: number; today: number };
   stats: { cpu_percent: number; mem_bytes: number; containers: number; db_bytes?: number } | null;
 };
-type Settings = { upload_deadline: string | null; memory_mb: number; stack_memory_mb: number; cpus: number; pids: number };
+type Settings = { upload_deadline: string | null; memory_mb: number; stack_memory_mb: number; cpus: number; pids: number; notice: string };
 
 const mb = (b?: number) => (b == null ? '-' : `${Math.round(b / 1024 / 1024)}MB`);
 
@@ -61,6 +61,7 @@ type StudentRow = {
   logged_in: boolean;
   is_test: boolean;
   is_admin?: boolean;
+  memo?: string;
   state: 'deployed' | 'building' | 'failed' | 'no_upload' | 'not_logged_in';
   project: { slug: string; title: string; type: string | null; status: string; url: string | null } | null;
 };
@@ -140,6 +141,24 @@ function StudentsCard() {
     const id = setInterval(load, 2000);
     return () => clearInterval(id);
   }, [deleting, rows, load]);
+
+  // 평가 메모: 선생님만 본다
+  const [memoFor, setMemoFor] = useState<StudentRow | null>(null);
+  const [memoText, setMemoText] = useState('');
+  const [memoBusy, setMemoBusy] = useState(false);
+  const saveMemo = async () => {
+    if (!memoFor) return;
+    setMemoBusy(true);
+    try {
+      const r = await api<{ memo: string }>(`/admin/users/${memoFor.student_no}/memo`, { method: 'PUT', ...json({ memo: memoText }) });
+      setRows((rs) => rs?.map((x) => (x.student_no === memoFor.student_no ? { ...x, memo: r.memo } : x)) ?? null);
+      setMemoFor(null);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setMemoBusy(false);
+    }
+  };
 
   const copyMissing = () => {
     const names = inRoom.filter(missing).map((s) => `${s.student_no} ${s.name}`).join('\n');
@@ -228,6 +247,14 @@ function StudentsCard() {
                       <T style={{ color: t.text, flex: 1 }} numberOfLines={1}>{s.name || '-'}</T>
                       {s.is_test && <Badge status="test" label="테스트" />}
                       <Badge status={s.state} />
+                      <Pressable
+                        onPress={() => { setMemoText(s.memo ?? ''); setMemoFor(s); }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${s.student_no} ${s.name} 평가 메모`}
+                        style={({ hovered }: any) => ({ padding: 4, borderRadius: 6, backgroundColor: hovered ? t.accentSoft : 'transparent' })}
+                      >
+                        <NotePencil size={15} color={s.memo ? t.accent : t.textMuted} weight={s.memo ? 'fill' : 'regular'} />
+                      </Pressable>
                       {!s.is_admin && (
                         <Pressable
                           onPress={() => { setConfirmNo(''); setToDelete(s); }}
@@ -246,6 +273,11 @@ function StudentsCard() {
                     ) : (
                       <T variant="small" numberOfLines={1}>{s.state === 'not_logged_in' ? s.email : s.project?.title || '올린 프로젝트 없음'}</T>
                     )}
+                    {s.memo ? (
+                      <Pressable onPress={() => { setMemoText(s.memo ?? ''); setMemoFor(s); }}>
+                        <T variant="small" numberOfLines={2} style={{ color: t.textSub, borderLeftWidth: 2, borderLeftColor: t.accent, paddingLeft: 8, marginTop: 2 }}>{s.memo}</T>
+                      </Pressable>
+                    ) : null}
                   </View>
                 </View>
               ))}
@@ -253,6 +285,30 @@ function StudentsCard() {
           )}
         </>
       )}
+      <ConfirmDialog
+        open={!!memoFor}
+        title={memoFor ? `${memoFor.student_no} ${memoFor.name} 메모` : ''}
+        confirmLabel="저장"
+        busy={memoBusy}
+        onConfirm={saveMemo}
+        onCancel={() => setMemoFor(null)}
+      >
+        {memoFor && (
+          <>
+            {memoFor.project?.title ? <T variant="sub">{memoFor.project.title}</T> : null}
+            <Field
+              label="평가 메모"
+              value={memoText}
+              onChangeText={setMemoText}
+              placeholder="예: 완성도 A, 발표 좋음. DB 연동까지 함"
+              multiline
+              maxLength={2000}
+              autoFocus
+              hint="선생님만 볼 수 있어요. 학생에게는 보이지 않고, 엑셀로 받을 때 '메모' 칸에 들어가요."
+            />
+          </>
+        )}
+      </ConfirmDialog>
       <ConfirmDialog
         open={!!toDelete}
         title="정말 이 계정을 삭제하시겠어요?"
@@ -622,7 +678,7 @@ function SettingsCard() {
       const d = deadline.trim() ? new Date(deadline.replace(' ', 'T')) : null;
       if (d && isNaN(d.getTime())) throw new Error('마감 시각은 2026-12-01 18:00 형식으로 적어 주세요');
       setCfg(await api('/admin/settings', { method: 'PUT', ...json({ ...cfg, upload_deadline: d?.toISOString() ?? null }) }));
-      setMsg({ kind: 'ok', text: '저장했어요. 리소스 한도는 다음 배포부터 적용돼요.' });
+      setMsg({ kind: 'ok', text: '저장했어요. 공지는 바로 보이고, 리소스 한도는 다음 배포부터 적용돼요.' });
     } catch (e: any) {
       setMsg({ kind: 'error', text: e.message });
     }
@@ -630,6 +686,15 @@ function SettingsCard() {
 
   return (
     <Card title="운영 설정" icon={Sliders}>
+      <Field
+        label="학생 공지"
+        value={cfg.notice ?? ''}
+        onChangeText={(v) => setCfg({ ...cfg, notice: v })}
+        placeholder="예: 11월 28일(금) 18시까지 제출하세요"
+        maxLength={300}
+        multiline
+        hint="학생 대시보드 맨 위에 떠요. 비우면 안 보여요. 마감 2주 전부터는 남은 시간도 같이 떠요."
+      />
       <Field label="업로드 마감" value={deadline} onChangeText={setDeadline} placeholder="2026-12-01 18:00" hint="비우면 마감 없음. 마감 후에는 관리자만 올릴 수 있어요." />
       <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap' }}>
         <View style={{ flex: 1, minWidth: 130 }}><Field label="서비스당 메모리 (MB)" value={String(cfg.memory_mb)} onChangeText={num('memory_mb')} /></View>

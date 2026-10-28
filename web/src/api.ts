@@ -80,5 +80,7 @@ export type PublicCard = {
   thumbnail_url: string | null;
   url: string;
   views?: number;
+  hot?: number;
+  updated_at?: string;
 };
 export type Warning = { code: string; message: string; paths?: string[] };

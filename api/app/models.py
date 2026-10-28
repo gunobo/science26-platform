@@ -75,6 +75,8 @@ class User(Base):
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # 관리자가 만든 테스트 학생 계정. 학교 도메인이 아니어도 학생으로 로그인할 수 있다
     is_test: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 관리자만 보는 평가 메모. 학생 API(/me 등)로는 내보내지 않는다
+    admin_memo: Mapped[str] = mapped_column(Text, default="", server_default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

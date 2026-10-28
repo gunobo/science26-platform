@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import settings_store
 from app.db import get_db
 from app.errors import not_found
 from app.models import Project, Release, ReleaseState, Role, User
@@ -27,6 +28,13 @@ async def me(user: User = Depends(current_user)):
         "student_no": user.student_no,
         "mapped": user.student_no is not None,
     }
+
+
+@router.get("/notice")
+async def notice(_: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    """대시보드 위 공지와 업로드 마감. 로그인한 사람에게만 보인다."""
+    cfg = await settings_store.load(db)
+    return {"notice": cfg.notice, "upload_deadline": cfg.upload_deadline}
 
 
 @router.get("/releases/{release_id}/logs")

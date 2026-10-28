@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, Text, useColorScheme, View } from 'react-native';
-import { Flask, ShieldCheck, SignOut, SquaresFour, UserCircle } from '@phosphor-icons/react';
+import { Flask, Megaphone, ShieldCheck, SignOut, SquaresFour, Timer, UserCircle } from '@phosphor-icons/react';
 
 import { api, ApiError, isPublicHost, Me, PUBLIC_HOST } from './api';
 import AdminScreen from './screens/AdminScreen';
@@ -85,6 +85,7 @@ function Workspace() {
         </View>
       </View>
       <ScrollView contentContainerStyle={{ maxWidth: layout.maxWidth, width: '100%', alignSelf: 'center', padding: layout.gutter, paddingTop: 28, paddingBottom: 64 }}>
+        <NoticeBanner />
         {!me.mapped && me.role !== 'admin' ? (
           <Card style={{ maxWidth: 560 }}>
             <T variant="title" style={{ marginBottom: 8 }}>학번 등록을 기다리고 있어요</T>
@@ -98,6 +99,52 @@ function Workspace() {
           <DashboardScreen onEditInfo={() => setTab('mypage')} />
         )}
       </ScrollView>
+    </View>
+  );
+}
+
+type NoticeData = { notice: string; upload_deadline: string | null };
+
+function untilText(ms: number) {
+  const h = Math.floor(ms / 3600000);
+  if (h >= 24) return `${Math.floor(h / 24)}일 ${h % 24}시간`;
+  if (h >= 1) return `${h}시간 ${Math.floor((ms % 3600000) / 60000)}분`;
+  return `${Math.max(1, Math.floor(ms / 60000))}분`;
+}
+
+// 관리자가 운영 설정에 쓴 공지와 업로드 마감까지 남은 시간
+function NoticeBanner() {
+  const t = useTheme();
+  const [data, setData] = useState<NoticeData | null>(null);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    api<NoticeData>('/notice').then(setData).catch(() => {});
+    const id = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(id);
+  }, []);
+  if (!data) return null;
+  const left = data.upload_deadline ? new Date(data.upload_deadline).getTime() - now : null;
+  const showDeadline = left != null && left > 0 && left < 14 * 86400000;
+  if (!data.notice && !showDeadline) return null;
+  const urgent = showDeadline && left! < 86400000;
+  const [bg, fg] = urgent ? [t.warnSoft, t.warn] : [t.accentSoft, t.accent];
+  return (
+    <View accessibilityRole="alert" style={{ backgroundColor: bg, borderRadius: radius.card, paddingHorizontal: 18, paddingVertical: 14, marginBottom: 20, gap: 8 }}>
+      {data.notice ? (
+        <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+          <Megaphone size={19} color={fg} weight="fill" style={{ marginTop: 1 } as any} />
+          <Text style={{ flex: 1, fontFamily: font.family, color: t.text, fontSize: 15, lineHeight: 22, fontWeight: '600' }}>{data.notice}</Text>
+        </View>
+      ) : null}
+      {showDeadline ? (
+        <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+          <Timer size={19} color={fg} weight="bold" />
+          <Text style={{ fontFamily: font.family, color: fg, fontSize: 14, fontWeight: '700' }}>
+            업로드 마감까지 {untilText(left!)} 남았어요
+          </Text>
+          <T variant="small">({new Date(data.upload_deadline!).toLocaleString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit' })})</T>
+        </View>
+      ) : null}
     </View>
   );
 }

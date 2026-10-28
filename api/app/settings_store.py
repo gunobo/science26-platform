@@ -16,6 +16,8 @@ class PlatformConfig(BaseModel):
     stack_memory_mb: int = 512
     cpus: float = 0.5
     pids: int = 128
+    # 학생 대시보드 위에 뜨는 공지 한 줄 (비우면 안 보임)
+    notice: str = ""
 
 
 async def load(db: AsyncSession) -> PlatformConfig:

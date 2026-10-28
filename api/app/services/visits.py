@@ -4,9 +4,10 @@ Traefik 이 학생 페이지를 '열 때'(Sec-Fetch-Dest: document)만 /public/v
 학교에서는 한 반이 같은 IP·같은 기종을 쓰므로 IP·User-Agent 대신 쿠키로 구분한다.
 """
 
+import math
 import re
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import or_, select
@@ -79,6 +80,38 @@ async def counts(student_nos: list[str]) -> dict[str, dict[str, int]]:
         no: {"total": int(vals[2 * i] or 0), "today": int(vals[2 * i + 1] or 0)}
         for i, no in enumerate(student_nos)
     }
+
+
+# 인기 점수 = Σ (d일 전 방문자 수 × 0.8^d, 최근 14일) + 3 × log₂(1 + 누적 조회수)
+# - 오늘 방문은 1배, 하루 지날 때마다 20%씩 덜 쳐 준다 (일주일 전 ≈ 0.21배). 요즘 많이 보는 프로젝트가 위로 온다.
+# - 누적 조회수는 로그로 조금만 더한다. 처음에 몰린 조회수만으로 계속 1등을 지키지 못하게.
+HOT_DAYS = 14
+HOT_DECAY = 0.8
+HOT_TOTAL_WEIGHT = 3
+
+
+def hot_score(daily: list[int], total: int) -> float:
+    """daily[d] = d일 전(0 = 오늘) 방문자 수."""
+    recent = sum(v * HOT_DECAY**d for d, v in enumerate(daily[:HOT_DAYS]))
+    return round(recent + HOT_TOTAL_WEIGHT * math.log2(1 + total), 1)
+
+
+async def hot_scores(student_nos: list[str]) -> dict[str, float]:
+    if not student_nos:
+        return {}
+    now = datetime.now(KST)
+    days = [(now - timedelta(days=d)).strftime("%Y%m%d") for d in range(HOT_DAYS)]
+    keys = []
+    for no in student_nos:
+        keys.append(f"visits:{no}:total")
+        keys += [f"visits:{no}:day:{day}" for day in days]
+    vals = await redis.mget(keys)
+    step = HOT_DAYS + 1
+    out = {}
+    for i, no in enumerate(student_nos):
+        chunk = vals[i * step:(i + 1) * step]
+        out[no] = hot_score([int(v or 0) for v in chunk[1:]], int(chunk[0] or 0))
+    return out
 
 
 async def forget(student_no: str) -> None:
