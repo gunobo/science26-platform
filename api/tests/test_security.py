@@ -329,3 +329,58 @@ def test_visit_counts_once_per_session(monkeypatch):
     import asyncio
     # 새 세션 3번(c1, 다른 브라우저, POST) - 로봇 제외
     assert asyncio.run(visits.counts(["1411"]))["1411"]["total"] == 3
+
+
+def test_redeploy_all_skips_busy_and_blocks_double_click(monkeypatch):
+    import uuid
+
+    from app.db import get_db
+    from app.routers import admin
+    from app.security import admin_user
+
+    class P:
+        def __init__(self, no):
+            self.student_no, self.active_release_id = no, uuid.uuid4()
+
+    projects = [P("1201"), P("1202"), P("1203")]
+
+    class Res:
+        def scalars(self):
+            return self
+
+        def all(self):
+            return projects
+
+    class DB:
+        def add(self, *_): ...
+        async def execute(self, *_): return Res()
+        async def commit(self): ...
+
+    async def fake_db():
+        yield DB()
+
+    locks, jobs = {"1202"}, []
+
+    async def fake_lock(no, owner):
+        if no in locks:
+            raise admin.APIError(409, "BUILD_IN_PROGRESS", "busy")
+        locks.add(no)
+
+    async def fake_enqueue(job, *args):
+        jobs.append((job, args[0]))
+
+    fake = _FakeRedis()
+    monkeypatch.setattr(admin, "redis", fake)
+    monkeypatch.setattr(admin, "acquire_project_lock", fake_lock)
+    monkeypatch.setattr(admin, "enqueue", fake_enqueue)
+    app.dependency_overrides[admin_user] = lambda: None
+    app.dependency_overrides[get_db] = fake_db
+    try:
+        c = TestClient(app)
+        r = c.post("/api/v1/admin/projects/redeploy-all", headers={**H, "Origin": UPLOAD})
+        again = c.post("/api/v1/admin/projects/redeploy-all", headers={**H, "Origin": UPLOAD})
+    finally:
+        app.dependency_overrides.clear()
+    assert r.status_code == 202 and r.json() == {"queued": ["1201", "1203"], "skipped": ["1202"]}
+    assert [j for j, _ in jobs] == ["deploy_existing", "deploy_existing"]
+    assert again.status_code == 409

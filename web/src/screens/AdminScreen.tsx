@@ -2,7 +2,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Linking, Pressable, Switch, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import {
-  ArrowCounterClockwise, ArrowsClockwise, Bell, CaretLeft, CaretRight, ClipboardText, Copy, MicrosoftExcelLogo, Student, UserPlus, FileCsv, Key, MagnifyingGlass, PencilSimple, Play, SignIn,
+  ArrowClockwise, ArrowCounterClockwise, ArrowsClockwise, Bell, CaretLeft, CaretRight, ClipboardText, Copy, MicrosoftExcelLogo, Student, UserPlus, FileCsv, Key, MagnifyingGlass, PencilSimple, Play, SignIn,
   Sliders, Sparkle, Stop, Trash, UploadSimple, UsersThree,
 } from '@phosphor-icons/react';
 
@@ -282,6 +282,27 @@ function ProjectsCard() {
     done(p.student_no);
   };
 
+  const [redeploying, setRedeploying] = useState(false);
+  const [redeployMsg, setRedeployMsg] = useState<{ text: string; kind: 'ok' | 'warn' | 'error' } | null>(null);
+  const redeployAll = async () => {
+    if (!window.confirm('서비스 중인 모든 프로젝트를 지금 버전 그대로 하나씩 다시 띄울까요?\n빌드는 하지 않고, 새로 뜰 때까지 기존 페이지가 계속 응답해요. 빌드 중인 프로젝트는 건너뛰어요.')) return;
+    setRedeploying(true);
+    setRedeployMsg(null);
+    try {
+      const r = await api<{ queued: string[]; skipped: string[] }>('/admin/projects/redeploy-all', { method: 'POST' });
+      setRedeployMsg({
+        kind: r.skipped.length ? 'warn' : 'ok',
+        text: `${r.queued.length}개를 차례로 다시 띄우는 중이에요 (한 번에 하나씩, 몇 분 걸려요).` +
+          (r.skipped.length ? ` 빌드 중이라 건너뜀: ${r.skipped.join(', ')}` : ''),
+      });
+      setTimeout(load, 3000);
+    } catch (e: any) {
+      setRedeployMsg({ kind: 'error', text: e.message });
+    } finally {
+      setRedeploying(false);
+    }
+  };
+
   const count = (s: string) => rows?.filter((p) => p.status === s).length ?? 0;
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -289,7 +310,17 @@ function ProjectsCard() {
   }, [rows, query]);
 
   return (
-    <Card title="전체 프로젝트" icon={UsersThree} right={<Button label="새로고침" kind="ghost" small icon={ArrowsClockwise} onPress={load} />}>
+    <Card
+      title="전체 프로젝트"
+      icon={UsersThree}
+      right={
+        <View style={{ flexDirection: 'row', gap: 4 }}>
+          <Button label="전체 재배포" kind="ghost" small icon={ArrowClockwise} busy={redeploying} onPress={redeployAll} />
+          <Button label="새로고침" kind="ghost" small icon={ArrowsClockwise} onPress={load} />
+        </View>
+      }
+    >
+      {redeployMsg ? <Notice kind={redeployMsg.kind} text={redeployMsg.text} /> : null}
       {error ? <Notice kind="error" text={error} /> : null}
       {rows && (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 28, marginBottom: 20 }}>
@@ -512,6 +543,10 @@ const ACTIONS: Record<string, { label: string; kind: Exclude<Kind, 'all'>; icon:
   delete: { label: '관리자 삭제', kind: 'admin', icon: Trash },
   import_users: { label: '학번 등록', kind: 'admin', icon: FileCsv },
   settings: { label: '운영 설정 변경', kind: 'admin', icon: Sliders },
+  redeploy_all: { label: '전체 재배포', kind: 'admin', icon: ArrowClockwise },
+  add_user: { label: '학생 추가', kind: 'admin', icon: UserPlus },
+  add_test_user: { label: '테스트 계정 추가', kind: 'admin', icon: UserPlus },
+  delete_test_user: { label: '테스트 계정 삭제', kind: 'admin', icon: Trash },
 };
 
 function ago(iso: string) {

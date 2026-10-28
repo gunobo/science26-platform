@@ -19,7 +19,7 @@ from app.config import get_settings
 from app.db import get_db
 from app.errors import APIError, not_found, upload_invalid
 from app.models import AuditLog, Project, Release, User
-from app.queue import claim_runtime_action, enqueue
+from app.queue import acquire_project_lock, claim_runtime_action, enqueue
 from app.redis_client import redis
 from app.security import admin_user, audit
 from app.services import visits
@@ -163,6 +163,32 @@ async def system(_: User = Depends(admin_user)):
     return {"disk": {"used": usage.used, "total": usage.total, "block_ratio": get_settings().disk_block_ratio}}
 
 
+@router.post("/projects/redeploy-all", status_code=202)
+async def redeploy_all(admin: User = Depends(admin_user), db: AsyncSession = Depends(get_db)):
+    """서비스 중인 프로젝트를 지금 버전 그대로 다시 띄운다 (빌드 없음).
+
+    라우팅 라벨처럼 컨테이너를 만들 때 정해지는 설정이 바뀌었을 때 쓴다. docker restart 로는 라벨이 안 바뀐다.
+    워커가 한 번에 하나씩 처리하고, 새 스택이 뜰 때까지 기존 스택이 응답해서 페이지가 끊기지 않는다.
+    """
+    if not await redis.set("redeploy-all", "1", nx=True, ex=300):
+        raise APIError(409, "ACTION_IN_PROGRESS", "방금 전체 재배포를 시작했어요. 5분 뒤에 다시 시도하세요")
+    projects = (
+        await db.execute(select(Project).where(Project.active_release_id.is_not(None)).order_by(Project.student_no))
+    ).scalars().all()
+    queued, skipped = [], []
+    for p in projects:
+        try:
+            await acquire_project_lock(p.student_no, str(p.active_release_id))
+        except APIError:
+            skipped.append(p.student_no)  # 빌드·배포 중
+            continue
+        await enqueue("deploy_existing", str(p.active_release_id))
+        queued.append(p.student_no)
+    audit(db, admin, "redeploy_all", f"{len(queued)}개 예약, {len(skipped)}개 건너뜀")
+    await db.commit()
+    return {"queued": queued, "skipped": skipped}
+
+
 @router.post("/projects/{student_no}/stop", status_code=202)
 async def force_stop(student_no: str, admin: User = Depends(admin_user), db: AsyncSession = Depends(get_db)):
     project = (await db.execute(select(Project).where(Project.student_no == student_no))).scalar_one_or_none()
@@ -303,7 +329,7 @@ async def put_settings(
 ACTIVITY_KINDS = {
     "login": ["first_login"],
     "project": ["register", "upload", "update_info", "rollback", "slug", "env", "stop", "start", "self_delete"],
-    "admin": ["admin_stop", "delete", "import_users", "settings"],
+    "admin": ["admin_stop", "delete", "import_users", "settings", "redeploy_all", "add_user", "add_test_user", "delete_test_user"],
 }
 TODAY_ACTIONS = ["first_login", "register", "upload", "update_info"]
 KST = ZoneInfo("Asia/Seoul")
