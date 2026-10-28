@@ -147,7 +147,8 @@ async def _student_rows(db: AsyncSession) -> list[dict]:
             "name": user.name,
             "email": user.email,
             "logged_in": user.last_login_at is not None,
-            "is_test": user.is_test,
+            # 자동 점검(E2E) 계정은 예전 버전에서 is_test 없이 만들어졌을 수 있다
+            "is_test": user.is_test or user.email.endswith("@science26.local"),
             "state": state,
             "project": None if project is None else {
                 "slug": project.slug, "title": project.title, "type": project.type.value if project.type else None,

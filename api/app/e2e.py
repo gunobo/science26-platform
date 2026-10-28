@@ -56,9 +56,11 @@ async def setup_user() -> str:
             sys.exit(f"학번 {STUDENT_NO} 을 실제 사용자({holder.email})가 쓰고 있어서 중단합니다")
         user = (await db.execute(select(User).where(User.email == EMAIL))).scalar_one_or_none()
         if user is None:
-            user = User(email=EMAIL, name="E2E 테스트", student_no=STUDENT_NO, role=Role.student)
+            # 테스트 계정으로 만들어야 관리자 학생 현황의 반 통계에 섞이지 않는다
+            user = User(email=EMAIL, name="E2E 테스트", student_no=STUDENT_NO, role=Role.student, is_test=True)
             db.add(user)
-            await db.commit()
+        user.is_test = True
+        await db.commit()
         sid = secrets.token_urlsafe(32)
         await redis.set(f"sess:{sid}", str(user.id), ex=3600)
         return sid
