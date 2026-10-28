@@ -10,6 +10,7 @@ import {
   ViewStyle,
 } from 'react-native';
 import { IconProps } from '@phosphor-icons/react';
+import { createPortal } from 'react-dom';
 
 import { font, radius, Theme, useTheme } from './theme';
 
@@ -238,3 +239,48 @@ export function Divider() {
 }
 
 export const layout = { maxWidth: 1180, gutter: 20 };
+
+/** 화면 가운데 확인 창. 위험하거나 오래 걸리는 작업 전에 쓴다. */
+export function ConfirmDialog({
+  open, title, children, confirmLabel, cancelLabel = '취소', danger, busy, onConfirm, onCancel,
+}: {
+  open: boolean;
+  title: string;
+  children: ReactNode;
+  confirmLabel: string;
+  cancelLabel?: string;
+  danger?: boolean;
+  busy?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const t = useTheme();
+  if (!open) return null;
+  const dialog = (
+    <View
+      accessibilityRole={'dialog' as any}
+      accessibilityLabel={title}
+      style={[
+        { position: 'fixed' as any, top: 0, left: 0, right: 0, bottom: 0, zIndex: 100, alignItems: 'center', justifyContent: 'center', padding: 20 },
+        web({ backgroundColor: 'rgba(9, 9, 11, 0.55)', backdropFilter: 'blur(2px)' }),
+      ]}
+    >
+      <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} onPress={busy ? undefined : onCancel} accessibilityLabel="닫기" />
+      <View
+        style={[
+          { width: '100%', maxWidth: 460, backgroundColor: t.surface, borderRadius: radius.card, borderWidth: 1, borderColor: t.border, padding: 24, gap: 14 },
+          web({ boxShadow: `0 24px 64px ${t.shadow}` }),
+        ]}
+      >
+        <T variant="title" style={{ fontSize: 21, lineHeight: 28 }}>{title}</T>
+        <View style={{ gap: 8 }}>{children}</View>
+        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
+          <Button label={cancelLabel} kind="ghost" onPress={onCancel} disabled={busy} />
+          <Button label={confirmLabel} kind={danger ? 'danger' : 'primary'} busy={busy} onPress={onConfirm} />
+        </View>
+      </View>
+    </View>
+  );
+  // 스크롤 영역 안에 그리면 그 영역에 갇히므로 body 맨 위층에 띄운다 (테마 컨텍스트는 포털로도 전달됨)
+  return typeof document !== 'undefined' ? createPortal(dialog, document.body) : dialog;
+}

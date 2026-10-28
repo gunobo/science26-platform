@@ -19,7 +19,7 @@ from app.config import get_settings
 from app.db import get_db
 from app.errors import APIError, not_found, upload_invalid
 from app.models import AuditLog, Project, Release, User
-from app.queue import acquire_project_lock, claim_runtime_action, enqueue
+from app.queue import acquire_project_lock, claim_runtime_action, enqueue, lock_key
 from app.redis_client import redis
 from app.security import admin_user, audit
 from app.services import visits
@@ -35,6 +35,9 @@ async def all_projects(_: User = Depends(admin_user), db: AsyncSession = Depends
     )
     rows = rows.all()
     visit_counts = await visits.counts([p.student_no for p, _ in rows])
+    # 빌드·배포·재배포 잠금이 걸려 있으면 처리 중 (전체 재배포 진행률 표시용)
+    locks = await redis.mget([lock_key(p.student_no) for p, _ in rows]) if rows else []
+    busy = {p.student_no for (p, _), lock in zip(rows, locks) if lock}
     out = []
     for project, owner in rows:
         active = await db.get(Release, project.active_release_id) if project.active_release_id else None
@@ -43,6 +46,7 @@ async def all_projects(_: User = Depends(admin_user), db: AsyncSession = Depends
             **project_out(project, active),
             "owner": {"email": owner.email, "name": owner.name},
             "visits": visit_counts.get(project.student_no, {"total": 0, "today": 0}),
+            "busy": project.student_no in busy,
             "stats": json.loads(stats) if stats else None,
         })
     return out

@@ -8,9 +8,10 @@ import {
 
 import { API_BASE, api, json, Project } from '../api';
 import { font, radius, useTheme } from '../theme';
-import { Badge, Button, Card, Field, FilePick, Icon, Notice, Segmented, Skeleton, T } from '../ui';
+import { Badge, Button, Card, ConfirmDialog, Field, FilePick, Icon, Notice, Segmented, Skeleton, T } from '../ui';
 
 type AdminProject = Project & {
+  busy?: boolean;
   owner: { email: string; name: string };
   visits?: { total: number; today: number };
   stats: { cpu_percent: number; mem_bytes: number; containers: number; db_bytes?: number } | null;
@@ -282,26 +283,52 @@ function ProjectsCard() {
     done(p.student_no);
   };
 
+  // 전체 재배포: 확인 창 → 예약 → 잠금이 풀릴 때까지 진행률 표시
+  const SECONDS_PER_PROJECT = 20; // 빌드 없이 다시 띄우기 + 헬스체크, 학생 앱에 따라 다름
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [redeploying, setRedeploying] = useState(false);
   const [redeployMsg, setRedeployMsg] = useState<{ text: string; kind: 'ok' | 'warn' | 'error' } | null>(null);
+  const [batch, setBatch] = useState<string[] | null>(null); // 이번에 예약한 학번
+  const [skipped, setSkipped] = useState<string[]>([]);
+  const activeCount = rows?.filter((p) => p.active_release).length ?? 0;
+  const minutes = (n: number) => Math.max(1, Math.ceil((n * SECONDS_PER_PROJECT) / 60));
+
   const redeployAll = async () => {
-    if (!window.confirm('서비스 중인 모든 프로젝트를 지금 버전 그대로 하나씩 다시 띄울까요?\n빌드는 하지 않고, 새로 뜰 때까지 기존 페이지가 계속 응답해요. 빌드 중인 프로젝트는 건너뛰어요.')) return;
     setRedeploying(true);
     setRedeployMsg(null);
     try {
       const r = await api<{ queued: string[]; skipped: string[] }>('/admin/projects/redeploy-all', { method: 'POST' });
-      setRedeployMsg({
-        kind: r.skipped.length ? 'warn' : 'ok',
-        text: `${r.queued.length}개를 차례로 다시 띄우는 중이에요 (한 번에 하나씩, 몇 분 걸려요).` +
-          (r.skipped.length ? ` 빌드 중이라 건너뜀: ${r.skipped.join(', ')}` : ''),
-      });
-      setTimeout(load, 3000);
+      // 서버가 잠금을 걸어 둔 상태라, 다음 목록을 받기 전에도 '처리 중'으로 보여 준다 (바로 완료로 오판하지 않게)
+      setRows((prev) => prev?.map((p) => (r.queued.includes(p.student_no) ? { ...p, busy: true } : p)) ?? prev);
+      setSkipped(r.skipped);
+      setBatch(r.queued);
+      setConfirmOpen(false);
+      load();
     } catch (e: any) {
       setRedeployMsg({ kind: 'error', text: e.message });
+      setConfirmOpen(false);
     } finally {
       setRedeploying(false);
     }
   };
+
+  // 진행 중이면 3초마다 갱신, 모두 끝나면 완료 표시
+  const remaining = batch ? batch.filter((no) => rows?.find((p) => p.student_no === no)?.busy) : [];
+  useEffect(() => {
+    if (!batch) return;
+    if (rows && remaining.length === 0) {
+      setRedeployMsg({
+        kind: skipped.length ? 'warn' : 'ok',
+        text: `전체 재배포 완료: ${batch.length}개 프로젝트를 다시 띄웠어요.` +
+          (skipped.length ? ` 빌드 중이라 건너뛴 프로젝트: ${skipped.join(', ')} (빌드가 끝나면 자동으로 새 설정이 붙어요)` : ''),
+      });
+      setBatch(null);
+      return;
+    }
+    const id = setInterval(load, 3000);
+    return () => clearInterval(id);
+  }, [batch, rows, remaining.length, load, skipped]);
+  const finished = batch ? batch.length - remaining.length : 0;
 
   const count = (s: string) => rows?.filter((p) => p.status === s).length ?? 0;
   const shown = useMemo(() => {
@@ -315,11 +342,35 @@ function ProjectsCard() {
       icon={UsersThree}
       right={
         <View style={{ flexDirection: 'row', gap: 4 }}>
-          <Button label="전체 재배포" kind="ghost" small icon={ArrowClockwise} busy={redeploying} onPress={redeployAll} />
+          <Button label="전체 재배포" kind="ghost" small icon={ArrowClockwise} disabled={!!batch || activeCount === 0} onPress={() => setConfirmOpen(true)} />
           <Button label="새로고침" kind="ghost" small icon={ArrowsClockwise} onPress={load} />
         </View>
       }
     >
+      <ConfirmDialog
+        open={confirmOpen}
+        title="정말 전체 재배포하시겠어요?"
+        confirmLabel="전체 재배포"
+        busy={redeploying}
+        onConfirm={redeployAll}
+        onCancel={() => setConfirmOpen(false)}
+      >
+        <T>서비스 중인 프로젝트 <Text style={{ fontWeight: '800' }}>{activeCount}개</Text>를 지금 버전 그대로 하나씩 다시 띄워요.</T>
+        <T>예상 시간: <Text style={{ fontWeight: '800' }}>약 {minutes(activeCount)}분</Text> (프로젝트당 약 {SECONDS_PER_PROJECT}초, 학생 앱에 따라 달라요)</T>
+        <T variant="sub">빌드는 하지 않고, 새로 뜰 때까지 기존 페이지가 계속 응답해서 학생 페이지는 끊기지 않아요. 지금 빌드 중인 프로젝트는 건너뛰어요.</T>
+      </ConfirmDialog>
+      {batch && (
+        <View style={{ backgroundColor: t.warnSoft, borderRadius: radius.control, padding: 14, gap: 10, marginBottom: 14 }} accessibilityState={{ busy: true }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+            <T style={{ color: t.text, fontWeight: '700' }}>전체 재배포 중 {finished}/{batch.length}</T>
+            <T variant="small">남은 시간 약 {minutes(remaining.length)}분</T>
+          </View>
+          {skipped.length > 0 && <T variant="small">빌드 중이라 건너뜀: {skipped.join(', ')}</T>}
+          <View style={{ height: 6, borderRadius: 3, backgroundColor: t.surface, overflow: 'hidden' }}>
+            <View style={[{ height: 6, borderRadius: 3, backgroundColor: t.warn, width: `${batch.length ? (finished / batch.length) * 100 : 0}%` }, { transitionProperty: 'width', transitionDuration: '400ms' } as any]} />
+          </View>
+        </View>
+      )}
       {redeployMsg ? <Notice kind={redeployMsg.kind} text={redeployMsg.text} /> : null}
       {error ? <Notice kind="error" text={error} /> : null}
       {rows && (
@@ -344,7 +395,17 @@ function ProjectsCard() {
         </View>
       )}
       <View style={{ gap: 6 }}>
-        {shown?.map((p) => pending[p.student_no] ? (
+        {shown?.map((p) => p.busy && batch?.includes(p.student_no) && !pending[p.student_no] ? (
+          <View key={p.student_no} style={{ backgroundColor: t.surfaceAlt, borderRadius: radius.control, padding: 12 }} accessibilityState={{ busy: true }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <T variant="heading" style={{ fontSize: 15, width: 44 }}>{p.student_no}</T>
+              <T style={{ color: t.text, width: 72 }} numberOfLines={1}>{p.owner.name || '-'}</T>
+              <T variant="small" style={{ color: t.warn, fontWeight: '700' }}>재배포 중…</T>
+              <View style={{ flex: 1 }}><Skeleton h={14} /></View>
+              <Skeleton h={32} w={150} r={radius.control} />
+            </View>
+          </View>
+        ) : pending[p.student_no] ? (
           <View key={p.student_no} style={{ backgroundColor: t.surfaceAlt, borderRadius: radius.control, padding: 12, gap: 8 }} accessibilityState={{ busy: true }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <T variant="heading" style={{ fontSize: 15, width: 44 }}>{p.student_no}</T>
