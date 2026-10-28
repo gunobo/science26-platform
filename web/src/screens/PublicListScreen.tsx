@@ -15,10 +15,10 @@ const TYPES: Record<Exclude<Filter, 'all'>, { label: string; icon: Icon }> = {
 
 type Sort = 'hot' | 'views' | 'recent' | 'no';
 const SORTS: { value: Sort; label: string }[] = [
+  { value: 'no', label: '학번순' },
   { value: 'hot', label: '인기순' },
   { value: 'views', label: '조회수순' },
   { value: 'recent', label: '최신순' },
-  { value: 'no', label: '학번순' },
 ];
 const roomOf = (no: string) => `${no[0]}-${no[1]}`;
 
@@ -30,7 +30,7 @@ export default function PublicListScreen() {
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
-  const [sort, setSort] = useState<Sort>('hot');
+  const [sort, setSort] = useState<Sort>('no');
   const [room, setRoom] = useState('all');
   const [showFormula, setShowFormula] = useState(false);
   const { width } = useWindowDimensions();
