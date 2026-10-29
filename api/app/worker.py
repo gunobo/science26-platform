@@ -338,7 +338,11 @@ async def deploy(release_id: str, *, build: bool) -> None:
             await db.rollback()
             release = await db.get(Release, release_id)
             project = await db.get(Project, release.project_id)
-            if release.state != ReleaseState.superseded and str(project.active_release_id) != release_id:
+            if not build:
+                # 롤백·다시 배포 실패: 한 번 성공했던 버전이니 실패로 표시하지 않고 원래 상태로 돌린다
+                release.state = ReleaseState.active if str(project.active_release_id) == release_id else ReleaseState.superseded
+                release.error = msg[:4000]
+            elif str(project.active_release_id) != release_id:
                 release.state = ReleaseState.failed
                 release.error = msg[:4000]
                 release.finished_at = now()
@@ -350,7 +354,7 @@ async def deploy(release_id: str, *, build: bool) -> None:
                 shutil.rmtree(rdir, ignore_errors=True)
                 await d.remove_images(f"s26/stu-{project.student_no}-*:v{release.version}")
         finally:
-            await buildlog.end(release_id, release.state.value)
+            await buildlog.end(release_id, "failed" if release.error else release.state.value)
             await release_project_lock(project.student_no)
 
 

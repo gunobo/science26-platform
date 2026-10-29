@@ -21,7 +21,8 @@ from app.models import (
 from app.queue import acquire_project_lock, claim_runtime_action, enqueue, release_project_lock
 from app.notify import activity
 from app.security import audit, decrypt, encrypt, mapped_student, rate_limit
-from app.services import agent
+from app.redis_client import redis
+from app.services import agent, buildlog
 from app.services import validation as v
 from app.services import visits
 from app.services.projects import student_url, get_or_create_project, get_project, next_version, project_out, release_out
@@ -348,8 +349,16 @@ class RollbackIn(BaseModel):
 
 
 async def _queue_redeploy(db: AsyncSession, user: User, project: Project, release_id: uuid.UUID, action: str, message: str = ""):
-    """message 가 있으면 관리자 알림도 보낸다 (없으면 기록만)."""
+    """message 가 있으면 관리자 알림도 보낸다 (없으면 기록만).
+
+    대기 상태로 바꿔 두어야 대시보드가 진행 중으로 보고 버튼을 막는다. 지난 배포 로그는 지워서
+    로그 창이 예전 '완료'를 보여 주고 바로 닫히지 않게 한다. 실패하면 워커가 원래 상태로 돌려놓는다.
+    """
     await acquire_project_lock(project.student_no, str(release_id))
+    release = await db.get(Release, release_id)
+    release.state = ReleaseState.queued
+    release.error = None
+    await redis.delete(buildlog.key(release_id))
     if message:
         await activity(db, user, action, message, target=project.student_no,
                        detail=f"{project.title or project.slug} | {student_url(project.slug)}")

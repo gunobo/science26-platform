@@ -24,6 +24,9 @@ export default function DashboardScreen({ onEditInfo }: { onEditInfo: () => void
   const [project, setProject] = useState<Project | null>(null);
   const [releases, setReleases] = useState<Release[]>([]);
   const [watching, setWatching] = useState<string | null>(null);
+  // 같은 릴리스를 다시 배포하면 id 가 그대로라 로그 창을 새로 열도록 key 를 바꾼다
+  const [watchSeq, setWatchSeq] = useState(0);
+  const watch = useCallback((id: string) => { setWatching(id); setWatchSeq((n) => n + 1); }, []);
 
   const refresh = useCallback(async () => {
     const [p, r] = await Promise.all([api<Project>('/projects/me'), api<Release[]>('/projects/me/releases')]);
@@ -50,13 +53,13 @@ export default function DashboardScreen({ onEditInfo }: { onEditInfo: () => void
     <>
       <AiHelpCard slug={project.slug} />
       <UploadCard disabled={busy} onUploaded={(id) => { setWatching(id); refresh(); }} />
-      {watching && <BuildLogCard releaseId={watching} onDone={refresh} />}
+      {watching && <BuildLogCard key={watchSeq} releaseId={watching} onDone={refresh} />}
       {project.active_release && <RuntimeCard project={project} onChange={refresh} />}
     </>
   );
   const side = (
     <>
-      <ReleasesCard releases={releases} activeId={project.active_release?.id} busy={busy} onWatch={setWatching} onChange={refresh} />
+      <ReleasesCard releases={releases} activeId={project.active_release?.id} busy={busy} onWatch={watch} onChange={refresh} />
       {project.type === 'fullstack' && <EnvCard />}
       <McpCard />
     </>
@@ -725,18 +728,24 @@ export function SettingsCard({ project, onChange }: { project: Project; onChange
 
 // ---- 릴리스 ----
 
-function ReleasesCard({ releases, activeId, busy, onWatch, onChange }: { releases: Release[]; activeId?: string; busy: boolean; onWatch: (id: string) => void; onChange: () => void }) {
+function ReleasesCard({ releases, activeId, busy, onWatch, onChange }: { releases: Release[]; activeId?: string; busy: boolean; onWatch: (id: string) => void; onChange: () => Promise<void> }) {
   const t = useTheme();
   const [error, setError] = useState('');
+  // 누른 순간부터 서버가 '대기'로 바꿀 때까지 버튼 자리를 스켈레톤으로 막는다 (연속 클릭 방지)
+  const [pending, setPending] = useState<string | null>(null);
   if (releases.length === 0) return null;
   const rollback = async (r: Release) => {
+    if (pending || busy) return;
+    setPending(r.id);
     setError('');
     try {
       await api('/projects/me/rollback', { method: 'POST', ...json({ release_id: r.id }) });
       onWatch(r.id);
-      onChange();
+      await onChange();
     } catch (e: any) {
       setError(e.message);
+    } finally {
+      setPending(null);
     }
   };
   return (
@@ -757,9 +766,11 @@ function ReleasesCard({ releases, activeId, busy, onWatch, onChange }: { release
               {r.error ? <T variant="small" style={{ color: t.danger }} numberOfLines={3}>{r.error.split('\n')[0]}</T> : null}
               <View style={{ flexDirection: 'row', gap: 6 }}>
                 <Button label="로그" kind="secondary" small icon={Terminal} onPress={() => onWatch(r.id)} />
-                {canRollback && (
-                  <Button label={r.id === activeId ? '다시 배포' : '이 버전으로'} kind="secondary" small icon={ArrowCounterClockwise} disabled={busy} onPress={() => rollback(r)} />
-                )}
+                {r.id === pending || BUSY_STATES.includes(r.state) ? (
+                  <View accessibilityState={{ busy: true }}><Skeleton h={32} w={104} r={radius.control} /></View>
+                ) : canRollback ? (
+                  <Button label={r.id === activeId ? '다시 배포' : '이 버전으로'} kind="secondary" small icon={ArrowCounterClockwise} disabled={busy || !!pending} onPress={() => rollback(r)} />
+                ) : null}
               </View>
             </View>
           );
