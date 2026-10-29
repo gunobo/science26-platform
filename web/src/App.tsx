@@ -8,6 +8,7 @@ import DashboardScreen from './screens/DashboardScreen';
 import LoginScreen from './screens/LoginScreen';
 import MyPageScreen from './screens/MyPageScreen';
 import PublicListScreen from './screens/PublicListScreen';
+import SiteFooter from './SiteFooter';
 import { dark, font, installWebFont, light, radius, ThemeContext, useTheme } from './theme';
 import { Button, Card, layout, Skeleton, T } from './ui';
 
@@ -84,20 +85,23 @@ function Workspace() {
           </View>
         </View>
       </View>
-      <ScrollView contentContainerStyle={{ maxWidth: layout.maxWidth, width: '100%', alignSelf: 'center', padding: layout.gutter, paddingTop: 28, paddingBottom: 64 }}>
-        <NoticeBanner />
-        {!me.mapped && me.role !== 'admin' ? (
-          <Card style={{ maxWidth: 560 }}>
-            <T variant="title" style={{ marginBottom: 8 }}>학번 등록을 기다리고 있어요</T>
-            <T>{me.email} 계정이 아직 학번과 연결되지 않았어요. 선생님께 등록을 요청한 뒤 새로고침하면 바로 업로드할 수 있어요.</T>
-          </Card>
-        ) : tab === 'admin' && me.role === 'admin' ? (
-          <AdminScreen />
-        ) : tab === 'mypage' ? (
-          <MyPageScreen me={me} onDeleted={() => setTab('project')} />
-        ) : (
-          <DashboardScreen onEditInfo={() => setTab('mypage')} />
-        )}
+      <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
+        <View style={{ flex: 1, maxWidth: layout.maxWidth, width: '100%', alignSelf: 'center', padding: layout.gutter, paddingTop: 28, paddingBottom: 40 }}>
+          <NoticeBanner />
+          {!me.mapped && me.role !== 'admin' ? (
+            <Card style={{ maxWidth: 560 }}>
+              <T variant="title" style={{ marginBottom: 8 }}>학번 등록을 기다리고 있어요</T>
+              <T>{me.email} 계정이 아직 학번과 연결되지 않았어요. 선생님께 등록을 요청한 뒤 새로고침하면 바로 업로드할 수 있어요.</T>
+            </Card>
+          ) : tab === 'admin' && me.role === 'admin' ? (
+            <AdminScreen />
+          ) : tab === 'mypage' ? (
+            <MyPageScreen me={me} onDeleted={() => setTab('project')} />
+          ) : (
+            <DashboardScreen onEditInfo={() => setTab('mypage')} />
+          )}
+        </View>
+        <SiteFooter />
       </ScrollView>
     </View>
   );

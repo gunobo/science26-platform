@@ -18,6 +18,9 @@ class PlatformConfig(BaseModel):
     pids: int = 128
     # 학생 대시보드 위에 뜨는 공지 한 줄 (비우면 안 보임)
     notice: str = ""
+    # 전시관·대시보드 맨 아래 푸터 (비우면 그 칸은 안 보임)
+    footer_contact: str = ""
+    footer_github: str = ""
 
 
 async def load(db: AsyncSession) -> PlatformConfig:

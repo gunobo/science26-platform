@@ -19,7 +19,7 @@ from app.db import get_db
 from app.errors import APIError
 from app.models import ProjectType, Release, ReleaseState, User
 from app.redis_client import redis
-from app.routers.projects import _queue_redeploy, start_release
+from app.routers.projects import _queue_redeploy, rollback_message, start_release
 from app.security import ip_rate_limit
 from app.services import agent, buildlog
 from app.services import validation as v
@@ -202,7 +202,8 @@ async def _call(name: str, args: dict, user: User, db: AsyncSession) -> dict:
                 return _tool_error("version 이 필요해요")
             if release.state not in (ReleaseState.active, ReleaseState.superseded):
                 return _tool_error("성공했던 버전으로만 되돌릴 수 있어요")
-            await _queue_redeploy(db, user, project, release.id, action="rollback")
+            message = await rollback_message(db, project, release, via="AI(MCP)")
+            await _queue_redeploy(db, user, project, release.id, action="rollback", message=message)
             return _text({"ok": True, "version": release.version, "next": "release_status 로 확인해"})
         return _text({**release_out(release), "url": student_url(project.slug), "log_tail": await _tail(release.id)})
 

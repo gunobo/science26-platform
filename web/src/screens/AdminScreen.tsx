@@ -16,7 +16,7 @@ type AdminProject = Project & {
   visits?: { total: number; today: number };
   stats: { cpu_percent: number; mem_bytes: number; containers: number; db_bytes?: number } | null;
 };
-type Settings = { upload_deadline: string | null; memory_mb: number; stack_memory_mb: number; cpus: number; pids: number; notice: string };
+type Settings = { upload_deadline: string | null; memory_mb: number; stack_memory_mb: number; cpus: number; pids: number; notice: string; footer_contact: string; footer_github: string };
 
 const mb = (b?: number) => (b == null ? '-' : `${Math.round(b / 1024 / 1024)}MB`);
 
@@ -679,7 +679,7 @@ function SettingsCard() {
       if (d && isNaN(d.getTime())) throw new Error('마감 시각은 2026-12-01 18:00 형식으로 적어 주세요');
       setCfg(await api('/admin/settings', { method: 'PUT', ...json({ ...cfg, upload_deadline: d?.toISOString() ?? null }) }));
       window.dispatchEvent(new Event(NOTICE_CHANGED));
-      setMsg({ kind: 'ok', text: '저장했어요. 공지는 바로 보이고, 리소스 한도는 다음 배포부터 적용돼요.' });
+      setMsg({ kind: 'ok', text: '저장했어요. 공지·푸터는 바로 보이고, 리소스 한도는 다음 배포부터 적용돼요.' });
     } catch (e: any) {
       setMsg({ kind: 'error', text: e.message });
     }
@@ -696,6 +696,14 @@ function SettingsCard() {
         multiline
         hint="학생 대시보드 맨 위에 떠요. 비우면 안 보여요. 마감 2주 전부터는 남은 시간도 같이 떠요."
       />
+      <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap' }}>
+        <View style={{ flex: 1, minWidth: 200 }}>
+          <Field label="푸터 연락처" value={cfg.footer_contact ?? ''} onChangeText={(v) => setCfg({ ...cfg, footer_contact: v })} placeholder="teacher@school.kr" maxLength={100} autoCapitalize="none" hint="메일 주소면 누르면 메일 쓰기로 열려요. 비우면 안 보여요." />
+        </View>
+        <View style={{ flex: 1, minWidth: 200 }}>
+          <Field label="푸터 GitHub" value={cfg.footer_github ?? ''} onChangeText={(v) => setCfg({ ...cfg, footer_github: v })} placeholder="https://github.com/아이디/저장소" autoCapitalize="none" hint="전시관과 대시보드 맨 아래에 보여요. 비우면 안 보여요." />
+        </View>
+      </View>
       <Field label="업로드 마감" value={deadline} onChangeText={setDeadline} placeholder="2026-12-01 18:00" hint="비우면 마감 없음. 마감 후에는 관리자만 올릴 수 있어요." />
       <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap' }}>
         <View style={{ flex: 1, minWidth: 130 }}><Field label="서비스당 메모리 (MB)" value={String(cfg.memory_mb)} onChangeText={num('memory_mb')} /></View>

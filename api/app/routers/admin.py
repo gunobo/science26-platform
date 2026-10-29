@@ -355,6 +355,12 @@ async def put_settings(
     cfg.notice = cfg.notice.strip()
     if len(cfg.notice) > 300:
         raise upload_invalid("공지는 300자까지 쓸 수 있어요")
+    cfg.footer_contact = cfg.footer_contact.strip()
+    cfg.footer_github = cfg.footer_github.strip()
+    if len(cfg.footer_contact) > 100:
+        raise upload_invalid("연락처는 100자까지 쓸 수 있어요")
+    if cfg.footer_github and not re.fullmatch(r"https://github\.com/[\w.-]+(/[\w.-]+)?/?", cfg.footer_github):
+        raise upload_invalid("GitHub 주소는 https://github.com/아이디/저장소 형식으로 적어 주세요")
     await settings_store.save(db, cfg)
     audit(db, admin, "settings", "")
     await db.commit()

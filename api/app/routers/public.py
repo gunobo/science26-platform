@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Resp
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import settings_store
 from app.db import get_db
 from app.errors import not_found
 from app.models import Project, ProjectStatus, Release, User
@@ -72,6 +73,14 @@ async def public_projects(request: Request, db: AsyncSession = Depends(get_db)):
             "updated_at": finished_at or created_at,
         })
     return out
+
+
+@router.get("/site")
+async def site(request: Request, db: AsyncSession = Depends(get_db)):
+    """푸터에 보일 연락처·GitHub (관리자 운영 설정에서 바꾼다)."""
+    await ip_rate_limit(request, "public", limit=1200)
+    cfg = await settings_store.load(db)
+    return {"contact": cfg.footer_contact, "github": cfg.footer_github}
 
 
 @router.get("/thumbnails/{student_no}")

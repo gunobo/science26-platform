@@ -469,3 +469,53 @@ async def test_runtime_action_lock_released_when_worker_finishes(monkeypatch):
     with pytest.raises(RuntimeError):
         await worker.start_project({}, "1411")
     assert released == ["1411", "1411"]
+
+
+async def test_footer_github_must_be_github_url():
+    from app.errors import APIError
+    from app.routers.admin import put_settings
+    from app.settings_store import PlatformConfig
+
+    for bad in ["javascript:alert(1)", "http://github.com/a/b", "https://evil.com/github.com/a", "https://github.com/a/b?x=<script>"]:
+        with pytest.raises(APIError):
+            await put_settings(PlatformConfig(footer_github=bad), admin=None, db=None)
+    with pytest.raises(APIError):
+        await put_settings(PlatformConfig(footer_contact="x" * 101), admin=None, db=None)
+
+
+async def test_container_alert_only_for_active_version(monkeypatch):
+    """롤백·새 배포로 옛 버전 스택을 내리는 순간은 알리지 않는다 (stu-1406-v3 오탐 회귀)."""
+    from app import worker
+
+    sent = []
+    locked = {"lock:project:1103"}
+
+    class FakeRedis:
+        async def exists(self, *keys): return sum(k in locked for k in keys)
+        async def set(self, *a, **k): return True
+
+    class FakeDB:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): ...
+        async def execute(self, q): return [("1101", 2), ("1102", 5), ("1103", 1)]
+
+    async def empty(*a): return []
+    async def nothing(*a): ...
+    async def notify(msg): sent.append(msg)
+    async def ps(): return [
+        {"Names": "stu-1101-v3-web-1", "State": "exited", "Status": "Exited (0)"},   # 옛 버전 (롤백으로 정리 중)
+        {"Names": "stu-1102-v5-web-1", "State": "exited", "Status": "Exited (1)"},   # 서비스 중인 버전이 죽음
+        {"Names": "stu-1103-v1-web-1", "State": "exited", "Status": "Exited (0)"},   # 배포 중 (잠금)
+        {"Names": "stu-1101-v2-web-1", "State": "running", "Status": "Up"},
+    ]
+
+    monkeypatch.setattr(worker, "check_disk", nothing)
+    monkeypatch.setattr(worker.d, "stats", empty)
+    monkeypatch.setattr(worker.d, "ps_labels", ps)
+    async def no_dbs(): return {}
+    monkeypatch.setattr(worker.provision, "database_sizes", no_dbs)
+    monkeypatch.setattr(worker, "redis", FakeRedis())
+    monkeypatch.setattr(worker, "SessionLocal", FakeDB)
+    monkeypatch.setattr(worker, "notify", notify)
+    await worker.collect_stats({})
+    assert sent == ["stu-1102-v5-web-1 컨테이너 상태: Exited (1)"]

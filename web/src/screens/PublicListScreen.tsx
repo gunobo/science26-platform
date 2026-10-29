@@ -3,6 +3,7 @@ import { Image, Linking, Pressable, ScrollView, Text, TextInput, useWindowDimens
 import { ArrowUpRight, Browser, DeviceMobile, Eye, Fire, Flask, Info, MagnifyingGlass, Stack, UploadSimple } from '@phosphor-icons/react';
 
 import { api, PublicCard, UPLOAD_HOST } from '../api';
+import SiteFooter from '../SiteFooter';
 import { font, radius, useTheme } from '../theme';
 import { Button, Icon, layout, Skeleton, T } from '../ui';
 
@@ -144,7 +145,7 @@ export default function PublicListScreen() {
 
         {error ? <T style={{ color: t.danger, marginBottom: 24 }}>{error}</T> : null}
 
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -10, paddingBottom: 80 }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -10, paddingBottom: 40 }}>
           {!filtered && !error &&
             Array.from({ length: cols * 2 }).map((_, i) => (
               <View key={i} style={{ width: `${100 / cols}%`, padding: 10, gap: 12 }}>
@@ -165,6 +166,7 @@ export default function PublicListScreen() {
           )}
         </View>
       </View>
+      <SiteFooter />
     </ScrollView>
   );
 }

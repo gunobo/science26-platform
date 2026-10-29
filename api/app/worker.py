@@ -19,7 +19,7 @@ from app.config import get_settings
 from app.db import SessionLocal
 from app.notify import send as send_discord
 from app.models import EnvVar, Project, ProjectStatus, ProjectType, Release, ReleaseState, Role, SourceKind, User
-from app.queue import redis_settings, release_project_lock, release_runtime_action
+from app.queue import lock_key, redis_settings, release_project_lock, release_runtime_action, runtime_action_key
 from app.redis_client import redis
 from app.security import decrypt
 from app.services import agent as agent_tokens
@@ -544,7 +544,7 @@ async def sleep_idle(ctx) -> None:
                 log.exception("슬립 실패 %s", project.student_no)
 
 
-_NAME_RE = re.compile(r"^stu-(\d{4})-v\d+-")
+_NAME_RE = re.compile(r"^stu-(\d{4})-v(\d+)-")
 
 
 def _mem_bytes(text: str) -> float:
@@ -612,16 +612,25 @@ async def collect_stats(ctx) -> None:
     for no, a in agg.items():
         await redis.set(f"stats:{no}", json.dumps({**a, "at": now().isoformat()}), ex=600)
 
+    # 서비스 중인 버전의 컨테이너만 본다. 배포·롤백·중지 중에는 스택을 내리면서
+    # 잠깐 Exited 로 보이므로 (잠금이 걸린 동안) 건너뛴다.
     async with SessionLocal() as db:
         running = {
-            p.student_no
-            for p in (await db.execute(select(Project).where(Project.status == ProjectStatus.running))).scalars()
+            no: version
+            for no, version in await db.execute(
+                select(Project.student_no, Release.version)
+                .join(Release, Release.id == Project.active_release_id)
+                .where(Project.status == ProjectStatus.running)
+            )
         }
     for c in containers:
         m = _NAME_RE.match(c.get("Names", ""))
-        if m and m.group(1) in running and c.get("State") in ("exited", "dead", "restarting"):
-            if await redis.set(f"alerted:ctr:{c['Names']}", "1", nx=True, ex=3600):
-                await notify(f"{c['Names']} 컨테이너 상태: {c.get('Status')}")
+        if not m or running.get(m.group(1)) != int(m.group(2)) or c.get("State") not in ("exited", "dead", "restarting"):
+            continue
+        if await redis.exists(lock_key(m.group(1)), runtime_action_key(m.group(1))):
+            continue
+        if await redis.set(f"alerted:ctr:{c['Names']}", "1", nx=True, ex=3600):
+            await notify(f"{c['Names']} 컨테이너 상태: {c.get('Status')}")
 
 
 async def recover_interrupted() -> None:

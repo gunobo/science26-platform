@@ -347,11 +347,22 @@ class RollbackIn(BaseModel):
     release_id: uuid.UUID
 
 
-async def _queue_redeploy(db: AsyncSession, user: User, project: Project, release_id: uuid.UUID, action: str):
+async def _queue_redeploy(db: AsyncSession, user: User, project: Project, release_id: uuid.UUID, action: str, message: str = ""):
+    """message 가 있으면 관리자 알림도 보낸다 (없으면 기록만)."""
     await acquire_project_lock(project.student_no, str(release_id))
-    audit(db, user, action, project.student_no)
+    if message:
+        await activity(db, user, action, message, target=project.student_no,
+                       detail=f"{project.title or project.slug} | {student_url(project.slug)}")
+    else:
+        audit(db, user, action, project.student_no)
     await db.commit()
     await enqueue("deploy_existing", str(release_id))
+
+
+async def rollback_message(db: AsyncSession, project: Project, release: Release, via: str = "") -> str:
+    current = await db.get(Release, project.active_release_id) if project.active_release_id else None
+    label = f"롤백 (v{current.version} → v{release.version})" if current else f"롤백 (v{release.version})"
+    return label + (f" | {via}" if via else "")
 
 
 @router.post("/rollback", status_code=202)
@@ -362,7 +373,7 @@ async def rollback(body: RollbackIn, user: User = Depends(mapped_student), db: A
         raise not_found("릴리스를 찾을 수 없습니다")
     if release.state not in (ReleaseState.active, ReleaseState.superseded):
         raise APIError(400, "UPLOAD_INVALID", "성공했던 릴리스로만 롤백할 수 있습니다")
-    await _queue_redeploy(db, user, project, release.id, action="rollback")
+    await _queue_redeploy(db, user, project, release.id, action="rollback", message=await rollback_message(db, project, release))
     return {"ok": True}
 
 
