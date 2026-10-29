@@ -121,7 +121,7 @@ TOOLS = [
 ]
 
 # 토큰이 든 MCP 설정 파일이 git·업로드에 섞이지 않게
-GITIGNORE_LINES = [".mcp.json", ".cursor/mcp.json", ".vscode/mcp.json", ".env", ".env.*"]
+GITIGNORE_LINES = [".mcp.json", ".cursor/mcp.json", ".vscode/mcp.json", ".codex/config.toml", "opencode.json", ".env", ".env.*"]
 
 INSTRUCTIONS = (
     "science26 학생 프로젝트 배포 서버야. 이 연결은 토큰 주인 학생의 프로젝트 하나만 다룰 수 있어. "

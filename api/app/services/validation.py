@@ -54,7 +54,7 @@ TOKEN_SCAN_TOTAL_MAX = 300 * 1024 * 1024
 
 
 def find_tokens(root: Path) -> set[str]:
-    """올린 소스에 들어 있는 science26 토큰(s26_…). .mcp.json 같은 설정 파일이 같이 올라오는 사고를 잡는다.
+    """올린 소스에 들어 있는 science26 토큰(s26_…). .mcp.json·opencode.json 같은 설정 파일이 같이 올라오는 사고를 잡는다.
 
     큰 파일(이미지·영상 등)은 건너뛴다. 토큰은 설정 파일·코드처럼 작은 텍스트에 들어간다.
     """

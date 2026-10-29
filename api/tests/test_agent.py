@@ -354,4 +354,6 @@ async def test_dead_token_in_upload_only_warns(tmp_path, monkeypatch):
 def test_mcp_instructions_ask_for_gitignore(env):
     _, _, c = env
     text = rpc(c, "initialize", {"protocolVersion": "2025-06-18"}).json()["result"]["instructions"]
-    assert ".gitignore" in text and ".mcp.json" in text and ".cursor/mcp.json" in text
+    for path in (".mcp.json", ".cursor/mcp.json", ".vscode/mcp.json", ".codex/config.toml", "opencode.json", ".env"):
+        assert path in text
+    assert ".gitignore" in text

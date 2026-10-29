@@ -193,11 +193,54 @@ function AiHelpCard({ slug }: { slug: string }) {
 type DeployToken = { id: string; name: string; prefix: string; created_at: string; expires_at: string; last_used_at: string | null };
 const MCP_URL = `https://${UPLOAD_HOST}/api/mcp`;
 // 토큰이 든 MCP 설정 파일이 git 에 올라가지 않게 .gitignore 에 넣을 줄 (서버 MCP 안내문과 같은 목록)
-const GITIGNORE = ['.mcp.json', '.cursor/mcp.json', '.vscode/mcp.json', '.env', '.env.*'];
+const GITIGNORE = ['.mcp.json', '.cursor/mcp.json', '.vscode/mcp.json', '.codex/config.toml', 'opencode.json', '.env', '.env.*'];
 const GITIGNORE_CMD = {
   mac: `[ -s .gitignore ] && [ -n "$(tail -c1 .gitignore)" ] && echo >> .gitignore; for f in ${GITIGNORE.map((f) => `'${f}'`).join(' ')}; do grep -qxF "$f" .gitignore 2>/dev/null || echo "$f" >> .gitignore; done`,
   windows: `$l=${GITIGNORE.map((f) => `'${f}'`).join(',')}; $c=@(if(Test-Path .gitignore){Get-Content .gitignore}); $l | ?{$c -notcontains $_} | Add-Content .gitignore`,
 };
+const TOKEN_ENV = 'SCIENCE26_TOKEN';
+
+// 도구별 연결 방법. env: 토큰을 환경변수로 받는 도구 (설정 파일에는 변수 이름만 들어간다)
+type AiTool = 'claude' | 'codex' | 'opencode' | 'cursor';
+const TOOLS: Record<AiTool, { label: string; env: boolean; where: string; config: (token: string) => string; note: string }> = {
+  claude: {
+    label: 'Claude Code',
+    env: false,
+    where: '프로젝트 폴더 터미널에서 실행',
+    config: (token) => `claude mcp add --transport http science26 ${MCP_URL} --header "Authorization: Bearer ${token}"`,
+    note: '토큰은 프로젝트 폴더가 아니라 내 컴퓨터 설정(~/.claude.json)에 저장돼요.',
+  },
+  codex: {
+    label: 'Codex',
+    env: true,
+    where: '~/.codex/config.toml 맨 아래에 붙여넣기 (없으면 새로 만들기)',
+    config: () => `[mcp_servers.science26]\nurl = "${MCP_URL}"\nbearer_token_env_var = "${TOKEN_ENV}"`,
+    note: `설정 파일에는 토큰이 아니라 환경변수 이름(${TOKEN_ENV})만 들어가요. Windows 는 %USERPROFILE%\\.codex\\config.toml 이에요.`,
+  },
+  opencode: {
+    label: 'OpenCode',
+    env: true,
+    where: '~/.config/opencode/opencode.json 에 넣기 (이미 있으면 "mcp" 부분만 합치기)',
+    config: () =>
+      JSON.stringify(
+        {
+          $schema: 'https://opencode.ai/config.json',
+          mcp: { science26: { type: 'remote', url: MCP_URL, enabled: true, headers: { Authorization: `Bearer {env:${TOKEN_ENV}}` } } },
+        },
+        null,
+        2,
+      ),
+    note: `{env:${TOKEN_ENV}} 가 실행할 때 토큰으로 바뀌어서, 설정 파일에는 토큰이 남지 않아요.`,
+  },
+  cursor: {
+    label: 'Cursor',
+    env: false,
+    where: '~/.cursor/mcp.json 에 넣기 (프로젝트 폴더 안 .cursor/mcp.json 말고)',
+    config: (token) => JSON.stringify({ mcpServers: { science26: { url: MCP_URL, headers: { Authorization: `Bearer ${token}` } } } }, null, 2),
+    note: '내 컴퓨터 전체 설정이라 git 에 올라가지 않아요.',
+  },
+};
+
 const day = (iso: string) => new Date(iso).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
 
 function McpCard() {
@@ -207,6 +250,7 @@ function McpCard() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [revoke, setRevoke] = useState<DeployToken | null>(null);
+  const [aiTool, setAiTool] = useState<AiTool>('claude');
   const [os, setOs] = useState<'mac' | 'windows'>(typeof navigator !== 'undefined' && /Win/.test(navigator.platform) ? 'windows' : 'mac');
 
   const load = useCallback(() => {
@@ -241,8 +285,13 @@ function McpCard() {
     }
   };
 
-  const claude = `claude mcp add --transport http science26 ${MCP_URL} --header "Authorization: Bearer ${created ?? 'TOKEN'}"`;
-  const jsonCfg = JSON.stringify({ mcpServers: { science26: { url: MCP_URL, headers: { Authorization: `Bearer ${created ?? 'TOKEN'}` } } } }, null, 2);
+  const token = created ?? 'TOKEN';
+  // Codex·OpenCode 는 설정 파일에 토큰 대신 환경변수 이름만 쓴다 (설정 파일이 새어도 토큰은 안 샘)
+  const envCmd = {
+    mac: `echo 'export ${TOKEN_ENV}="${token}"' >> ~/.zshrc && source ~/.zshrc`,
+    windows: `setx ${TOKEN_ENV} "${token}"`,
+  }[os];
+  const tool = TOOLS[aiTool];
 
   return (
     <Card title="AI에서 바로 배포 (MCP)" icon={Plug}>
@@ -258,13 +307,17 @@ function McpCard() {
           <Segmented value={os} onChange={setOs} options={[{ value: 'mac', label: 'macOS·Linux' }, { value: 'windows', label: 'Windows PowerShell' }]} />
           <CopyBox text={GITIGNORE_CMD[os]} wrap />
           <T variant="small">{GITIGNORE.join(', ')} 를 .gitignore 에 추가해요 (이미 있으면 건너뜀). 토큰이 든 설정 파일이 GitHub 에 올라가지 않게 막아요.</T>
-          <T style={{ fontWeight: '700', color: t.text, marginTop: 6 }}>2. Claude Code 에 연결</T>
-          <CopyBox text={claude} wrap />
-          <T style={{ fontWeight: '700', color: t.text }}>2. Cursor 등은 내 컴퓨터 전체 설정 (~/.cursor/mcp.json)에</T>
-          <CopyBox text={jsonCfg} wrap />
-          <T variant="small">
-            Claude Code 명령은 토큰을 프로젝트 폴더가 아닌 내 컴퓨터 설정에 저장해요. 연결한 뒤 AI 에게 "science26 에 배포해줘" 라고 말하면 돼요. 혹시 토큰이 든 파일을 올리면 서버가 배포를 멈추고 그 토큰을 바로 폐기해요.
-          </T>
+          <T style={{ fontWeight: '700', color: t.text, marginTop: 6 }}>2. 쓰는 AI 도구 고르기</T>
+          <Segmented value={aiTool} onChange={setAiTool} options={(Object.keys(TOOLS) as AiTool[]).map((k) => ({ value: k, label: TOOLS[k].label }))} />
+          {tool.env && (
+            <>
+              <T style={{ fontWeight: '700', color: t.text, marginTop: 6 }}>3. 토큰을 환경변수에 넣기 ({os === 'mac' ? 'macOS·Linux' : 'Windows PowerShell, 실행 후 터미널 새로 열기'})</T>
+              <CopyBox text={envCmd} wrap />
+            </>
+          )}
+          <T style={{ fontWeight: '700', color: t.text, marginTop: 6 }}>{tool.env ? '4' : '3'}. {tool.where}</T>
+          <CopyBox text={tool.config(token)} wrap />
+          <T variant="small">{tool.note} 연결한 뒤 AI 에게 "science26 에 배포해줘" 라고 말하면 돼요. 혹시 토큰이 든 파일을 올리면 서버가 배포를 멈추고 그 토큰을 바로 폐기해요.</T>
           <View style={{ alignSelf: 'flex-start' }}>
             <Button label="다 적었어요" kind="secondary" small onPress={() => setCreated(null)} />
           </View>

@@ -127,10 +127,19 @@ Claude Code, Cursor 같은 AI 도구를 science26 에 연결하면, 대시보드
 
 1. 대시보드 오른쪽 **AI에서 바로 배포 (MCP)** → **토큰 만들기**
 2. 나온 명령을 **그 자리에서** 복사해요. 토큰은 이때 한 번만 보여요
-   - 먼저 **.gitignore 명령**을 프로젝트 폴더에서 실행 (macOS·Linux / Windows PowerShell 중 골라서). `.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `.env` 가 git 에 안 올라가게 해요
-   - Claude Code: 프로젝트 폴더 터미널에서 `claude mcp add --transport http science26 … --header "Authorization: Bearer s26_…"`
-   - Cursor 등: 내 컴퓨터 전체 설정(`~/.cursor/mcp.json`)에 JSON 붙여넣기
+   - 먼저 **.gitignore 명령**을 프로젝트 폴더에서 실행 (macOS·Linux / Windows PowerShell 중 골라서). `.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `.codex/config.toml`, `opencode.json`, `.env` 가 git 에 안 올라가게 해요
+   - 쓰는 도구(Claude Code / Codex / OpenCode / Cursor)를 고르면 그 도구용 명령이 나와요
 3. AI에게 **"science26 에 배포해줘"** 라고 말하기
+
+| 도구 | 연결 방법 |
+|---|---|
+| Claude Code | 프로젝트 폴더에서 `claude mcp add --transport http science26 https://science26-upload.bssm.dev/api/mcp --header "Authorization: Bearer 토큰"` (토큰은 내 컴퓨터 설정에 저장) |
+| Codex | 토큰을 환경변수 `SCIENCE26_TOKEN` 에 넣고, `~/.codex/config.toml` 에 `[mcp_servers.science26]` / `url = "https://science26-upload.bssm.dev/api/mcp"` / `bearer_token_env_var = "SCIENCE26_TOKEN"` |
+| OpenCode | 토큰을 환경변수 `SCIENCE26_TOKEN` 에 넣고, `~/.config/opencode/opencode.json` 의 `mcp` 에 `type: "remote"`, `url`, `headers: { "Authorization": "Bearer {env:SCIENCE26_TOKEN}" }` |
+| Cursor | `~/.cursor/mcp.json` (프로젝트 안 `.cursor/mcp.json` 말고) |
+
+- 환경변수 넣기: macOS `echo 'export SCIENCE26_TOKEN="토큰"' >> ~/.zshrc && source ~/.zshrc`, Windows PowerShell `setx SCIENCE26_TOKEN "토큰"` (실행 후 터미널 새로 열기)
+- Codex·OpenCode 는 설정 파일에 토큰이 아니라 **환경변수 이름만** 들어가서 더 안전해요
 
 - 토큰은 **내 프로젝트에만** 쓸 수 있어요. 다른 학생 프로젝트나 관리자 기능은 못 건드려요
 - 30일 뒤 만료되고, 한 사람당 3개까지 만들 수 있어요
