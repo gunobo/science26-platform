@@ -448,3 +448,24 @@ def test_hot_score_prefers_recent_visits():
     # 누적만 큰 프로젝트가 요즘 꾸준히 보는 프로젝트를 이기지 못한다
     assert hot_score([8] * 7 + [0] * 7, 56) > hot_score([0] * 14, 500)
     assert hot_score([0] * 14, 0) == 0
+
+
+async def test_runtime_action_lock_released_when_worker_finishes(monkeypatch):
+    """중지가 끝나면 바로 다시 시작할 수 있어야 한다 (E2E '다시 시작' 503 회귀). 실패해도 잠금은 풀린다."""
+    from app import worker
+
+    released = []
+
+    async def fake_release(no):
+        released.append(no)
+
+    async def ok(*a): ...
+    async def boom(*a): raise RuntimeError("docker down")
+
+    monkeypatch.setattr(worker, "release_runtime_action", fake_release)
+    monkeypatch.setattr(worker, "_stop_project", ok)
+    await worker.stop_project({}, "1411")
+    monkeypatch.setattr(worker, "_start_project", boom)
+    with pytest.raises(RuntimeError):
+        await worker.start_project({}, "1411")
+    assert released == ["1411", "1411"]

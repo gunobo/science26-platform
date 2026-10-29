@@ -25,10 +25,21 @@ async def enqueue(job: str, *args, **kwargs):
     return await (await pool()).enqueue_job(job, *args, **kwargs)
 
 
-async def claim_runtime_action(student_no: str, seconds: int = 15) -> None:
-    """중지·시작 요청이 짧은 시간에 여러 번 들어오면 첫 번째만 받는다 (연속 클릭·중복 요청 방지)."""
-    if not await redis.set(f"runtime-action:{student_no}", "1", nx=True, ex=seconds):
+def runtime_action_key(student_no: str) -> str:
+    return f"runtime-action:{student_no}"
+
+
+async def claim_runtime_action(student_no: str, seconds: int = 120) -> None:
+    """중지·시작이 처리되는 동안 들어온 요청은 거절한다 (연속 클릭·중복 요청 방지).
+
+    워커가 일을 끝내면 바로 풀어 준다 (release_runtime_action). seconds 는 워커가 죽었을 때를 대비한 안전 시간.
+    """
+    if not await redis.set(runtime_action_key(student_no), "1", nx=True, ex=seconds):
         raise APIError(409, "ACTION_IN_PROGRESS", "이미 처리 중이에요. 잠시 후 다시 시도하세요")
+
+
+async def release_runtime_action(student_no: str) -> None:
+    await redis.delete(runtime_action_key(student_no))
 
 
 def lock_key(student_no: str) -> str:

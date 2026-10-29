@@ -207,7 +207,10 @@ class E2E:
         stopped = await self.wait_status("stopped")
         code, text = await self.page_text()
         record("중지", stopped and code == 503 and "중지된 프로젝트" in text, f"HTTP {code}")
-        await self.api.post("/projects/me/start")
+        # 중지가 끝나자마자 다시 시작할 수 있어야 한다 (연타 방지 잠금은 워커가 일을 끝내면 풀린다)
+        start = await self.api.post("/projects/me/start")
+        if not record("중지 직후 다시 시작 접수", start.status_code == 202, f"HTTP {start.status_code} {start.text[:120]}" if start.status_code != 202 else ""):
+            return
         running = await self.wait_status("running")
         ok = False
         for _ in range(15):

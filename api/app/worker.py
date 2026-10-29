@@ -19,7 +19,7 @@ from app.config import get_settings
 from app.db import SessionLocal
 from app.notify import send as send_discord
 from app.models import EnvVar, Project, ProjectStatus, ProjectType, Release, ReleaseState, Role, SourceKind, User
-from app.queue import redis_settings, release_project_lock
+from app.queue import redis_settings, release_project_lock, release_runtime_action
 from app.redis_client import redis
 from app.security import decrypt
 from app.services import buildlog, docker_ops as d, provision, visits
@@ -364,6 +364,14 @@ async def _active(db, student_no: str) -> tuple[Project | None, Release | None]:
 
 
 async def stop_project(ctx, student_no: str, status: str = "stopped") -> None:
+    try:
+        await _stop_project(student_no, status)
+    finally:
+        # 중지가 끝나면 바로 다시 시작할 수 있게
+        await release_runtime_action(student_no)
+
+
+async def _stop_project(student_no: str, status: str) -> None:
     async with SessionLocal() as db:
         project, release = await _active(db, student_no)
         if release is None:
@@ -374,6 +382,13 @@ async def stop_project(ctx, student_no: str, status: str = "stopped") -> None:
 
 
 async def start_project(ctx, student_no: str) -> None:
+    try:
+        await _start_project(student_no)
+    finally:
+        await release_runtime_action(student_no)
+
+
+async def _start_project(student_no: str) -> None:
     async with SessionLocal() as db:
         project, release = await _active(db, student_no)
         if release is None:
