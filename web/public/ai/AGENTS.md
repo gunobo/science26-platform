@@ -164,4 +164,6 @@ services:
 2. 빌드해서 zip 을 만든 뒤 `create_upload` (type: static 또는 fullstack) → 돌려받은 `curl` 명령으로 올리기. 공개 GitHub 저장소면 `deploy_github`
 3. `release_status` 로 결과 확인. 실패하면 `log_tail` 을 읽고 고쳐서 다시 올리기 (10분에 5번까지라 무작정 반복하지 마)
 4. 끝나면 학생에게 주소와 바꾼 내용을 알려 줘
-- 토큰이나 업로드 주소를 파일·커밋·로그에 남기지 마
+- 처음 연결하면 `.gitignore` 에 `.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `.env`, `.env.*` 가 있는지 보고 없으면 추가해
+- 토큰(`s26_…`)이나 업로드 주소를 코드·커밋·zip·로그에 남기지 마. 커밋·zip 전에 `s26_` 가 들어간 파일이 없는지 확인해
+- 서버는 올린 파일에서 살아 있는 토큰을 발견하면 배포를 멈추고 그 토큰을 바로 폐기해. 그러면 학생이 대시보드에서 새로 만들어야 해

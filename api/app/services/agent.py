@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.errors import APIError
-from app.models import DeployToken, User
+from app.models import AuditLog, DeployToken, User
 from app.redis_client import redis
 from app.security import rate_limit
 
@@ -87,3 +87,22 @@ async def use_ticket(ticket: str) -> tuple[uuid.UUID, str] | None:
         return None
     data = json.loads(raw)
     return uuid.UUID(data["user_id"]), data["type"]
+
+
+async def revoke_leaked(db: AsyncSession, tokens: set[str]) -> list[User]:
+    """업로드에서 발견된 토큰을 바로 폐기한다. 폐기된 토큰의 주인 목록을 돌려준다 (이미 없는 토큰은 무시)."""
+    if not tokens:
+        return []
+    rows = (await db.execute(
+        select(DeployToken).where(DeployToken.token_hash.in_([hash_token(t) for t in tokens]))
+    )).scalars().all()
+    owners = []
+    for row in rows:
+        owner = await db.get(User, row.user_id)
+        db.add(AuditLog(actor_id=row.user_id, action="token_leaked", target=owner.student_no if owner else "",
+                        detail=f"업로드에서 토큰 {row.prefix}… 발견, 자동 폐기"))
+        await db.delete(row)
+        if owner is not None:
+            owners.append(owner)
+    await db.commit()
+    return owners

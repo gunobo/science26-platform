@@ -46,6 +46,33 @@ def safe_extract(zip_path: Path, dest: Path, max_unpacked: int) -> None:
         zf.extractall(dest)
 
 
+# ---- 새어 나온 AI 연결 토큰 ----
+
+TOKEN_RE = re.compile(rb"s26_[A-Za-z0-9_-]{43}")
+TOKEN_SCAN_FILE_MAX = 5 * 1024 * 1024
+TOKEN_SCAN_TOTAL_MAX = 300 * 1024 * 1024
+
+
+def find_tokens(root: Path) -> set[str]:
+    """올린 소스에 들어 있는 science26 토큰(s26_…). .mcp.json 같은 설정 파일이 같이 올라오는 사고를 잡는다.
+
+    큰 파일(이미지·영상 등)은 건너뛴다. 토큰은 설정 파일·코드처럼 작은 텍스트에 들어간다.
+    """
+    found: set[str] = set()
+    scanned = 0
+    for p in sorted(root.rglob("*")):
+        if not p.is_file() or p.is_symlink():
+            continue
+        size = p.stat().st_size
+        if size > TOKEN_SCAN_FILE_MAX:
+            continue
+        scanned += size
+        if scanned > TOKEN_SCAN_TOTAL_MAX:
+            break
+        found.update(m.decode() for m in TOKEN_RE.findall(p.read_bytes()))
+    return found
+
+
 IGNORED_TOP = {"__MACOSX", ".DS_Store"}
 
 

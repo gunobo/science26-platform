@@ -6,7 +6,7 @@ import {
   Sliders, Sparkle, Stop, Trash, UploadSimple, UsersThree,
 } from '@phosphor-icons/react';
 
-import { API_BASE, api, json, Project } from '../api';
+import { API_BASE, api, json, NOTICE_CHANGED, Project } from '../api';
 import { font, radius, useTheme } from '../theme';
 import { Badge, Button, Card, ConfirmDialog, Field, FilePick, Icon, Notice, Segmented, Skeleton, T } from '../ui';
 
@@ -678,6 +678,7 @@ function SettingsCard() {
       const d = deadline.trim() ? new Date(deadline.replace(' ', 'T')) : null;
       if (d && isNaN(d.getTime())) throw new Error('마감 시각은 2026-12-01 18:00 형식으로 적어 주세요');
       setCfg(await api('/admin/settings', { method: 'PUT', ...json({ ...cfg, upload_deadline: d?.toISOString() ?? null }) }));
+      window.dispatchEvent(new Event(NOTICE_CHANGED));
       setMsg({ kind: 'ok', text: '저장했어요. 공지는 바로 보이고, 리소스 한도는 다음 배포부터 적용돼요.' });
     } catch (e: any) {
       setMsg({ kind: 'error', text: e.message });
@@ -743,6 +744,7 @@ const ACTIONS: Record<string, { label: string; kind: Exclude<Kind, 'all'>; icon:
   delete_user: { label: '학생 계정 삭제', kind: 'admin', icon: Trash },
   token_create: { label: 'AI 연결 토큰 만들기', kind: 'project', icon: Key },
   token_revoke: { label: 'AI 연결 토큰 지우기', kind: 'project', icon: Key },
+  token_leaked: { label: '토큰 유출 감지·자동 폐기', kind: 'project', icon: Key },
 };
 
 function ago(iso: string) {

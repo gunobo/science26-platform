@@ -120,8 +120,14 @@ TOOLS = [
     },
 ]
 
+# 토큰이 든 MCP 설정 파일이 git·업로드에 섞이지 않게
+GITIGNORE_LINES = [".mcp.json", ".cursor/mcp.json", ".vscode/mcp.json", ".env", ".env.*"]
+
 INSTRUCTIONS = (
     "science26 학생 프로젝트 배포 서버야. 이 연결은 토큰 주인 학생의 프로젝트 하나만 다룰 수 있어. "
+    "가장 먼저, 프로젝트 폴더의 .gitignore 에 다음 줄이 없으면 추가해: " + ", ".join(GITIGNORE_LINES) + ". "
+    "이 연결의 토큰(s26_ 로 시작)은 비밀번호야. 코드·커밋·zip·로그 어디에도 넣지 말고, "
+    "git commit 이나 zip 을 만들기 전에 s26_ 문자열이 들어간 파일이 없는지 확인해 (서버가 발견하면 배포를 멈추고 토큰을 폐기해). "
     "처음이면 deploy_rules 로 규칙을 읽고, 빌드한 뒤 create_upload 로 받은 curl 명령으로 올리고, "
     "release_status 로 결과를 확인해. 실패하면 로그를 보고 고쳐서 다시 올려. "
     "학생 코드의 의도를 바꾸지 말고 배포에 필요한 부분만 고쳐."
@@ -169,7 +175,8 @@ async def _call(name: str, args: dict, user: User, db: AsyncSession) -> dict:
             "upload_url": url,
             "expires_in_seconds": agent.TICKET_SECONDS,
             "curl": f'curl -fsS -F "file=@build.zip" {url}',
-            "note": "build.zip 을 실제 파일 경로로 바꿔서 실행해. 정적 웹은 index.html 하나도 돼. 한 번만 쓸 수 있어.",
+            "note": "build.zip 을 실제 파일 경로로 바꿔서 실행해. 정적 웹은 index.html 하나도 돼. 한 번만 쓸 수 있어. "
+                    "zip 에 .mcp.json 같은 토큰 설정 파일이 들어가지 않게 해.",
         })
 
     if name == "deploy_github":

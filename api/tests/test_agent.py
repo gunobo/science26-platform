@@ -288,3 +288,70 @@ def test_token_is_stored_hashed():
     h = agent.hash_token(raw)
     assert raw not in h and len(h) == 64
     assert agent.new_token() != raw
+
+
+# ---- 업로드에 섞인 토큰 ----
+
+def test_find_tokens_in_source(tmp_path):
+    from app.services.validation import find_tokens
+
+    leaked = agent.new_token()
+    (tmp_path / ".mcp.json").write_text('{"headers": {"Authorization": "Bearer ' + leaked + '"}}')
+    (tmp_path / "index.html").write_text("<p>s26_short 는 토큰 아님</p>")
+    (tmp_path / "big.bin").write_bytes(b"\0" * (6 * 1024 * 1024))
+    assert find_tokens(tmp_path) == {leaked}
+
+
+async def test_live_token_in_upload_stops_deploy_and_revokes(tmp_path, monkeypatch):
+    from app import worker
+    from app.services import validation as v
+
+    leaked = agent.new_token()
+    (tmp_path / "config.js").write_text(f"const t = '{leaked}'")
+    revoked = []
+
+    async def fake_revoke(db, tokens):
+        revoked.append(tokens)
+        return [make_user()]
+
+    class Ctx:
+        async def __aenter__(self): return None
+        async def __aexit__(self, *a): ...
+
+    monkeypatch.setattr(worker, "SessionLocal", lambda: Ctx())
+    monkeypatch.setattr(worker.agent_tokens, "revoke_leaked", fake_revoke)
+    logs = []
+
+    async def emit(line): logs.append(line)
+
+    with pytest.raises(v.ValidationError) as e:
+        await worker._check_leaked_tokens(tmp_path, emit)
+    assert e.value.code == "TOKEN_LEAKED" and leaked not in e.value.message
+    assert revoked == [{leaked}]
+
+
+async def test_dead_token_in_upload_only_warns(tmp_path, monkeypatch):
+    from app import worker
+
+    (tmp_path / "a.txt").write_text(agent.new_token())
+
+    async def none_revoked(db, tokens): return []
+
+    class Ctx:
+        async def __aenter__(self): return None
+        async def __aexit__(self, *a): ...
+
+    monkeypatch.setattr(worker, "SessionLocal", lambda: Ctx())
+    monkeypatch.setattr(worker.agent_tokens, "revoke_leaked", none_revoked)
+    logs = []
+
+    async def emit(line): logs.append(line)
+
+    await worker._check_leaked_tokens(tmp_path, emit)
+    assert any("폐기된 토큰" in l for l in logs)
+
+
+def test_mcp_instructions_ask_for_gitignore(env):
+    _, _, c = env
+    text = rpc(c, "initialize", {"protocolVersion": "2025-06-18"}).json()["result"]["instructions"]
+    assert ".gitignore" in text and ".mcp.json" in text and ".cursor/mcp.json" in text

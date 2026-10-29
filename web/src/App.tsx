@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, Text, useColorScheme, View } from 'react-native';
 import { Flask, Megaphone, ShieldCheck, SignOut, SquaresFour, Timer, UserCircle } from '@phosphor-icons/react';
 
-import { api, ApiError, isPublicHost, Me, PUBLIC_HOST } from './api';
+import { api, ApiError, isPublicHost, Me, NOTICE_CHANGED, PUBLIC_HOST } from './api';
 import AdminScreen from './screens/AdminScreen';
 import DashboardScreen from './screens/DashboardScreen';
 import LoginScreen from './screens/LoginScreen';
@@ -118,9 +118,18 @@ function NoticeBanner() {
   const [data, setData] = useState<NoticeData | null>(null);
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
-    api<NoticeData>('/notice').then(setData).catch(() => {});
-    const id = setInterval(() => setNow(Date.now()), 60000);
-    return () => clearInterval(id);
+    const load = () => api<NoticeData>('/notice').then(setData).catch(() => {});
+    load();
+    // 관리자가 운영 설정에서 저장하면 바로, 학생 화면은 1분마다 새 공지를 가져온다
+    window.addEventListener(NOTICE_CHANGED, load);
+    const id = setInterval(() => {
+      setNow(Date.now());
+      load();
+    }, 60000);
+    return () => {
+      window.removeEventListener(NOTICE_CHANGED, load);
+      clearInterval(id);
+    };
   }, []);
   if (!data) return null;
   const left = data.upload_deadline ? new Date(data.upload_deadline).getTime() - now : null;

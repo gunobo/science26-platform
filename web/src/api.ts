@@ -36,6 +36,9 @@ export async function api<T = any>(path: string, init: RequestInit = {}): Promis
   return res.json();
 }
 
+// 관리자가 공지를 저장하면 상단 배너가 바로 다시 불러오게 알리는 이벤트
+export const NOTICE_CHANGED = 's26:notice-changed';
+
 export const json = (data: unknown): RequestInit => ({ body: JSON.stringify(data) });
 
 export type Me = { email: string; name: string; role: 'student' | 'admin'; student_no: string | null; mapped: boolean };

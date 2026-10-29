@@ -22,6 +22,7 @@ from app.models import EnvVar, Project, ProjectStatus, ProjectType, Release, Rel
 from app.queue import redis_settings, release_project_lock, release_runtime_action
 from app.redis_client import redis
 from app.security import decrypt
+from app.services import agent as agent_tokens
 from app.services import buildlog, docker_ops as d, provision, visits
 from app.services import validation as v
 from app.services.app_page import build_site
@@ -65,6 +66,28 @@ def _dir_size(root: Path) -> int:
     return sum(p.stat().st_size for p in root.rglob("*") if p.is_file())
 
 
+async def _check_leaked_tokens(src: Path, emit) -> None:
+    """소스에 살아 있는 AI 연결 토큰이 있으면 그 토큰을 폐기하고 배포를 멈춘다.
+
+    정적 웹은 그대로 공개되고, GitHub 저장소도 공개라서, 토큰이 든 채로 올라가면 누구나 그 학생 프로젝트를 바꿀 수 있다.
+    이미 폐기된 토큰 문자열은 쓸모가 없으니 경고만 하고 진행한다 (예전 버전 재배포가 막히지 않게).
+    """
+    tokens = await asyncio.to_thread(v.find_tokens, src)
+    if not tokens:
+        return
+    async with SessionLocal() as db:
+        owners = await agent_tokens.revoke_leaked(db, tokens)
+    if not owners:
+        await emit("⚠️ 소스에 science26 토큰 문자열이 있어요 (이미 폐기된 토큰). .gitignore 에 MCP 설정 파일을 넣고 지워 주세요")
+        return
+    raise v.ValidationError(
+        "올린 파일 안에 AI 연결 토큰(s26_…)이 들어 있어서 배포를 멈추고 그 토큰을 바로 폐기했어요. "
+        ".mcp.json·.cursor/mcp.json 같은 설정 파일을 .gitignore 에 넣고 지운 뒤 다시 올리세요. "
+        "AI 연결은 대시보드에서 토큰을 새로 만들어야 해요.",
+        code="TOKEN_LEAKED",
+    )
+
+
 async def prepare_source(release: Release, rdir: Path, emit) -> Path:
     """검증까지 끝난 소스 루트를 돌려준다."""
     src = rdir / "src"
@@ -89,6 +112,7 @@ async def prepare_source(release: Release, rdir: Path, emit) -> Path:
     if release.type == ProjectType.app:
         return rdir
     _reject_symlinks(src)
+    await _check_leaked_tokens(src, emit)
     marker = "index.html" if release.type == ProjectType.static else "docker-compose.yml"
     return v.find_root(src, marker)
 

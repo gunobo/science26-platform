@@ -127,6 +127,7 @@ Claude Code, Cursor 같은 AI 도구를 science26 에 연결하면, 대시보드
 
 1. 대시보드 오른쪽 **AI에서 바로 배포 (MCP)** → **토큰 만들기**
 2. 나온 명령을 **그 자리에서** 복사해요. 토큰은 이때 한 번만 보여요
+   - 먼저 **.gitignore 명령**을 프로젝트 폴더에서 실행 (macOS·Linux / Windows PowerShell 중 골라서). `.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `.env` 가 git 에 안 올라가게 해요
    - Claude Code: 프로젝트 폴더 터미널에서 `claude mcp add --transport http science26 … --header "Authorization: Bearer s26_…"`
    - Cursor 등: 내 컴퓨터 전체 설정(`~/.cursor/mcp.json`)에 JSON 붙여넣기
 3. AI에게 **"science26 에 배포해줘"** 라고 말하기
@@ -135,6 +136,9 @@ Claude Code, Cursor 같은 AI 도구를 science26 에 연결하면, 대시보드
 - 30일 뒤 만료되고, 한 사람당 3개까지 만들 수 있어요
 - 정적 웹·풀스택만 돼요. 모바일 앱(APK)은 대시보드에서 올려요
 - 마감, 용량 제한, 업로드 횟수 제한(10분에 5번)은 대시보드와 똑같이 적용돼요
+
+- AI 도 연결되면 .gitignore 를 먼저 확인하고, 커밋·zip 전에 토큰이 섞이지 않았는지 확인해요
+- 혹시 토큰이 든 파일을 올리면 **서버가 배포를 멈추고 그 토큰을 바로 폐기**해요. 대시보드에서 새로 만들어 연결하세요
 
 > ⚠️ **토큰은 비밀번호예요.** 친구에게 보여 주거나, 프로젝트 폴더 안 설정 파일(`.mcp.json`, `.cursor/mcp.json`)에 넣어 GitHub 에 올리면 그 사람이 내 프로젝트를 바꿀 수 있어요. 새어 나갔다 싶으면 대시보드에서 바로 **지우기** 하고 새로 만드세요.
 

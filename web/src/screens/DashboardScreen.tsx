@@ -192,6 +192,12 @@ function AiHelpCard({ slug }: { slug: string }) {
 
 type DeployToken = { id: string; name: string; prefix: string; created_at: string; expires_at: string; last_used_at: string | null };
 const MCP_URL = `https://${UPLOAD_HOST}/api/mcp`;
+// 토큰이 든 MCP 설정 파일이 git 에 올라가지 않게 .gitignore 에 넣을 줄 (서버 MCP 안내문과 같은 목록)
+const GITIGNORE = ['.mcp.json', '.cursor/mcp.json', '.vscode/mcp.json', '.env', '.env.*'];
+const GITIGNORE_CMD = {
+  mac: `[ -s .gitignore ] && [ -n "$(tail -c1 .gitignore)" ] && echo >> .gitignore; for f in ${GITIGNORE.map((f) => `'${f}'`).join(' ')}; do grep -qxF "$f" .gitignore 2>/dev/null || echo "$f" >> .gitignore; done`,
+  windows: `$l=${GITIGNORE.map((f) => `'${f}'`).join(',')}; $c=@(if(Test-Path .gitignore){Get-Content .gitignore}); $l | ?{$c -notcontains $_} | Add-Content .gitignore`,
+};
 const day = (iso: string) => new Date(iso).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
 
 function McpCard() {
@@ -201,6 +207,7 @@ function McpCard() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [revoke, setRevoke] = useState<DeployToken | null>(null);
+  const [os, setOs] = useState<'mac' | 'windows'>(typeof navigator !== 'undefined' && /Win/.test(navigator.platform) ? 'windows' : 'mac');
 
   const load = useCallback(() => {
     api<DeployToken[]>('/projects/me/tokens').then(setTokens).catch((e) => setError(e.message));
@@ -247,12 +254,16 @@ function McpCard() {
       {created ? (
         <View style={{ gap: 10, marginBottom: 14 }}>
           <Notice kind="warn" icon={WarningIcon} text="토큰은 지금 한 번만 보여요. 다른 사람에게 보여 주거나 GitHub 에 올리면 그 사람이 내 프로젝트를 바꿀 수 있어요. 새어 나갔으면 바로 지우세요." />
-          <T style={{ fontWeight: '700', color: t.text }}>Claude Code: 프로젝트 폴더 터미널에서</T>
+          <T style={{ fontWeight: '700', color: t.text }}>1. 먼저 .gitignore 에 설정 파일 넣기 (프로젝트 폴더 터미널에서)</T>
+          <Segmented value={os} onChange={setOs} options={[{ value: 'mac', label: 'macOS·Linux' }, { value: 'windows', label: 'Windows PowerShell' }]} />
+          <CopyBox text={GITIGNORE_CMD[os]} wrap />
+          <T variant="small">{GITIGNORE.join(', ')} 를 .gitignore 에 추가해요 (이미 있으면 건너뜀). 토큰이 든 설정 파일이 GitHub 에 올라가지 않게 막아요.</T>
+          <T style={{ fontWeight: '700', color: t.text, marginTop: 6 }}>2. Claude Code 에 연결</T>
           <CopyBox text={claude} wrap />
-          <T style={{ fontWeight: '700', color: t.text }}>Cursor 등: 내 컴퓨터 전체 설정 (~/.cursor/mcp.json)</T>
+          <T style={{ fontWeight: '700', color: t.text }}>2. Cursor 등은 내 컴퓨터 전체 설정 (~/.cursor/mcp.json)에</T>
           <CopyBox text={jsonCfg} wrap />
           <T variant="small">
-            프로젝트 폴더 안 설정 파일(.mcp.json, .cursor/mcp.json)에 넣으면 git 으로 같이 올라갈 수 있어요. 위처럼 내 컴퓨터 설정에만 넣으세요. 연결한 뒤 AI 에게 "science26 에 배포해줘" 라고 말하면 돼요.
+            Claude Code 명령은 토큰을 프로젝트 폴더가 아닌 내 컴퓨터 설정에 저장해요. 연결한 뒤 AI 에게 "science26 에 배포해줘" 라고 말하면 돼요. 혹시 토큰이 든 파일을 올리면 서버가 배포를 멈추고 그 토큰을 바로 폐기해요.
           </T>
           <View style={{ alignSelf: 'flex-start' }}>
             <Button label="다 적었어요" kind="secondary" small onPress={() => setCreated(null)} />
