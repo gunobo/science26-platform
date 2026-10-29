@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import settings_store
@@ -16,11 +16,12 @@ from app.config import get_settings
 from app.db import get_db
 from app.errors import APIError, not_found, upload_invalid
 from app.models import (
-    EnvVar, Project, ProjectStatus, ProjectType, Release, ReleaseState, Role, SourceKind, User,
+    DeployToken, EnvVar, Project, ProjectStatus, ProjectType, Release, ReleaseState, Role, SourceKind, User,
 )
 from app.queue import acquire_project_lock, claim_runtime_action, enqueue, release_project_lock
 from app.notify import activity
 from app.security import audit, decrypt, encrypt, mapped_student, rate_limit
+from app.services import agent
 from app.services import validation as v
 from app.services import visits
 from app.services.projects import student_url, get_or_create_project, get_project, next_version, project_out, release_out
@@ -140,12 +141,13 @@ async def delete_my_project(user: User = Depends(mapped_student), db: AsyncSessi
 
 # ---- 업로드 ----
 
-async def _check_upload_allowed(db: AsyncSession, user: User) -> None:
+async def _check_upload_allowed(db: AsyncSession, user: User, strict: bool = False) -> None:
+    """strict: 토큰(AI) 업로드는 관리자 계정이어도 마감을 지킨다 (토큰이 새어도 마감을 우회하지 못하게)."""
     usage = shutil.disk_usage(get_settings().data_dir)
     if usage.used / usage.total >= get_settings().disk_block_ratio:
         raise APIError(507, "STORAGE_FULL", "서버 저장 공간이 부족해서 지금은 올릴 수 없어요. 선생님께 알려 주세요")
     cfg = await settings_store.load(db)
-    if user.role != Role.admin and cfg.upload_deadline and datetime.now(timezone.utc) > cfg.upload_deadline:
+    if (strict or user.role != Role.admin) and cfg.upload_deadline and datetime.now(timezone.utc) > cfg.upload_deadline:
         raise APIError(403, "DEADLINE_PASSED", "업로드 마감 시간이 지났습니다")
     await rate_limit(f"upload:{user.id}", limit=5, window=600)
 
@@ -163,7 +165,7 @@ def _save(upload: UploadFile, dest: Path, limit: int) -> int:
 
 async def _create_release(
     db: AsyncSession, user: User, project: Project, rtype: ProjectType, kind: SourceKind,
-    ref: str, release_id: uuid.UUID,
+    ref: str, release_id: uuid.UUID, via: str = "",
 ) -> Release:
     release = Release(
         id=release_id, project_id=project.id, version=await next_version(db, project),
@@ -178,7 +180,8 @@ async def _create_release(
     await activity(
         db, user, "register" if first else "upload",
         "프로젝트 등록" if first else f"새 버전 업로드 (v{release.version})",
-        target=user.student_no, detail=f"{kind_label} | {project.title or project.slug} | {student_url(project.slug)}",
+        target=user.student_no,
+        detail=f"{kind_label} | {project.title or project.slug} | {student_url(project.slug)}" + (f" | {via}" if via else ""),
     )
     await db.commit()
     await enqueue("build_release", str(release.id))
@@ -217,10 +220,18 @@ async def upload_release(
     user: User = Depends(mapped_student),
     db: AsyncSession = Depends(get_db),
 ):
+    return await start_release(db, user, type, file, repo_url, branch)
+
+
+async def start_release(
+    db: AsyncSession, user: User, type: ProjectType, file: UploadFile | None = None,
+    repo_url: str | None = None, branch: str = "main", via: str = "",
+) -> dict:
+    """정적·풀스택 업로드 공통 처리. 대시보드 업로드와 AI(MCP) 업로드가 같이 쓴다."""
     s = get_settings()
     if type == ProjectType.app:
         raise upload_invalid("앱은 /projects/me/app 으로 올려주세요")
-    await _check_upload_allowed(db, user)
+    await _check_upload_allowed(db, user, strict=bool(via))
     project = await get_or_create_project(db, user)
 
     release_id = uuid.uuid4()
@@ -240,7 +251,7 @@ async def upload_release(
         else:
             raise upload_invalid("파일 또는 GitHub 저장소 주소가 필요합니다")
 
-        release = await _create_release(db, user, project, type, kind, ref, release_id)
+        release = await _create_release(db, user, project, type, kind, ref, release_id, via=via)
     except v.ValidationError as e:
         shutil.rmtree(rdir, ignore_errors=True)
         await release_project_lock(user.student_no)
@@ -457,3 +468,57 @@ async def put_env(items: list[EnvItem], user: User = Depends(mapped_student), db
     audit(db, user, "env", user.student_no)
     await db.commit()
     return {"ok": True, "note": "다음 배포(또는 재배포)부터 적용됩니다"}
+
+
+# ---- AI 연결 토큰 (MCP) ----
+
+class TokenIn(BaseModel):
+    name: str = ""
+
+
+def _token_out(t: DeployToken) -> dict:
+    return {"id": str(t.id), "name": t.name, "prefix": t.prefix, "created_at": t.created_at,
+            "expires_at": t.expires_at, "last_used_at": t.last_used_at}
+
+
+@router.get("/tokens")
+async def list_tokens(user: User = Depends(mapped_student), db: AsyncSession = Depends(get_db)):
+    now = datetime.now(timezone.utc)
+    rows = (await db.execute(
+        select(DeployToken).where(DeployToken.user_id == user.id, DeployToken.expires_at > now)
+        .order_by(DeployToken.created_at.desc())
+    )).scalars()
+    return [_token_out(t) for t in rows]
+
+
+@router.post("/tokens", status_code=201)
+async def create_token(body: TokenIn, user: User = Depends(mapped_student), db: AsyncSession = Depends(get_db)):
+    """원문은 이 응답에서 한 번만 보여 준다."""
+    now = datetime.now(timezone.utc)
+    # 만료된 건 정리하고, 살아 있는 토큰은 최대 MAX_TOKENS 개
+    for old in (await db.execute(select(DeployToken).where(DeployToken.user_id == user.id, DeployToken.expires_at <= now))).scalars():
+        await db.delete(old)
+    alive = await db.scalar(select(func.count()).select_from(DeployToken).where(DeployToken.user_id == user.id, DeployToken.expires_at > now))
+    if alive >= agent.MAX_TOKENS:
+        raise APIError(409, "TOO_MANY_TOKENS", f"토큰은 {agent.MAX_TOKENS}개까지 만들 수 있어요. 안 쓰는 토큰을 지워 주세요")
+    await rate_limit(f"token-create:{user.id}", limit=10, window=3600)
+    raw = agent.new_token()
+    row = DeployToken(user_id=user.id, name=body.name.strip()[:40] or "AI 연결", token_hash=agent.hash_token(raw),
+                      prefix=raw[:10], expires_at=agent.expires())
+    db.add(row)
+    audit(db, user, "token_create", user.student_no)
+    await db.commit()
+    await db.refresh(row)
+    return {**_token_out(row), "token": raw}
+
+
+@router.delete("/tokens/{token_id}")
+async def delete_token(token_id: uuid.UUID, user: User = Depends(mapped_student), db: AsyncSession = Depends(get_db)):
+    row = await db.get(DeployToken, token_id)
+    # 다른 학생 토큰 id 를 넣어도 '없음' 으로만 답한다
+    if row is None or row.user_id != user.id:
+        raise not_found("토큰을 찾을 수 없어요")
+    await db.delete(row)
+    audit(db, user, "token_revoke", user.student_no)
+    await db.commit()
+    return {"ok": True}

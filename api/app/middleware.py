@@ -10,10 +10,14 @@ from http.cookies import SimpleCookie
 from app.config import get_settings
 from app.redis_client import redis
 from app.security import SESSION_COOKIE
+from app.services.agent import ticket_exists
 
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 CSRF_HEADER = b"x-s26-request"
 VISIT_PATH = "/api/v1/public/visit"
+# AI 코딩 도구용. 쿠키 대신 Bearer 토큰·1회용 주소로만 인증하므로 CSRF 헤더 대신 '브라우저에서 온 요청이 아님'을 확인한다
+MCP_PATH = "/api/mcp"
+AGENT_UPLOAD_PREFIX = "/api/v1/agent/upload/"
 
 # 경로 → 허용 최대 본문 (바이트). 나머지 API 요청은 DEFAULT_MAX.
 UPLOAD_LIMITS = {
@@ -52,6 +56,9 @@ class SecurityGuard:
         headers = {k.lower(): v for k, v in scope["headers"]}
         path = scope["path"].rstrip("/")
 
+        if path == MCP_PATH or path.startswith(AGENT_UPLOAD_PREFIX):
+            return await self._agent(scope, receive, send, headers, path)
+
         # 1) CSRF: 학생 페이지(science26.bssm.dev)는 같은 사이트라 SameSite 쿠키가 실려 온다.
         #    커스텀 헤더는 다른 출처에서 붙이려면 사전 요청(preflight)이 필요하고, CORS 가 그걸 거절한다.
         site = headers.get(b"sec-fetch-site", b"").decode()
@@ -64,7 +71,7 @@ class SecurityGuard:
         # 2) 본문 크기: Content-Length 로 먼저 거르고, 실제로 받는 양도 센다
         limit = UPLOAD_LIMITS.get(path, DEFAULT_MAX)
         length = headers.get(b"content-length")
-        if length is not None and int(length) > limit:
+        if length is not None and (not length.isdigit() or int(length) > limit):
             return await _reject(send, 413, "UPLOAD_INVALID", f"요청이 너무 큽니다 (최대 {limit // 1024 // 1024}MB)")
 
         # 3) 큰 업로드 경로는 세션이 유효할 때만 본문을 받는다
@@ -74,6 +81,26 @@ class SecurityGuard:
             if sid is None or not await redis.exists(f"sess:{sid.value}"):
                 return await _reject(send, 401, "UNAUTHORIZED", "로그인이 필요합니다")
 
+        await self._counted(scope, receive, send, limit)
+
+    async def _agent(self, scope, receive, send, headers, path):
+        # 브라우저는 다른 출처로 POST 할 때 Origin 을 꼭 붙인다. CLI 도구(curl, Claude Code 등)는 안 붙인다.
+        # 학생 페이지에 심은 스크립트가 1회용 주소나 MCP 를 부르는 것(그리고 DNS 리바인딩)을 막는다.
+        if headers.get(b"origin") or headers.get(b"sec-fetch-site"):
+            return await _reject(send, 403, "FORBIDDEN", "브라우저에서는 쓸 수 없는 주소입니다")
+        if path == MCP_PATH:
+            limit = DEFAULT_MAX
+        else:
+            limit = UPLOAD_LIMITS["/api/v1/projects/me/releases"]
+            # 1회용 주소가 살아 있을 때만 본문을 받는다 (아무나 큰 파일을 밀어 넣지 못하게)
+            if not await ticket_exists(path[len(AGENT_UPLOAD_PREFIX):]):
+                return await _reject(send, 404, "NOT_FOUND", "업로드 주소가 없거나 만료됐어요")
+        length = headers.get(b"content-length")
+        if length is not None and (not length.isdigit() or int(length) > limit):
+            return await _reject(send, 413, "UPLOAD_INVALID", f"요청이 너무 큽니다 (최대 {limit // 1024 // 1024}MB)")
+        await self._counted(scope, receive, send, limit)
+
+    async def _counted(self, scope, receive, send, limit):
         received = 0
 
         async def counted_receive():

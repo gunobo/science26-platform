@@ -157,3 +157,11 @@ services:
 3. 올릴 것: 만든 zip 파일 경로, 또는 GitHub 저장소 주소와 브랜치
 4. 대시보드에서 추가해야 할 환경변수 이름 (값은 학생이 직접 입력)
 5. 업로드: `https://science26-upload.bssm.dev` → 타입 선택 → 파일 또는 저장소 주소 → "올리고 배포하기"
+
+## science26 MCP 가 연결돼 있으면
+`science26` MCP 도구가 보이면 학생 대신 직접 배포해도 돼 (학생이 배포해 달라고 했을 때만).
+1. `project_status` 로 지금 상태와 링크 이름 확인
+2. 빌드해서 zip 을 만든 뒤 `create_upload` (type: static 또는 fullstack) → 돌려받은 `curl` 명령으로 올리기. 공개 GitHub 저장소면 `deploy_github`
+3. `release_status` 로 결과 확인. 실패하면 `log_tail` 을 읽고 고쳐서 다시 올리기 (10분에 5번까지라 무작정 반복하지 마)
+4. 끝나면 학생에게 주소와 바꾼 내용을 알려 줘
+- 토큰이나 업로드 주소를 파일·커밋·로그에 남기지 마

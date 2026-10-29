@@ -364,7 +364,7 @@ async def put_settings(
 # 관리자 화면 '최근 활동' 필터 → action 묶음
 ACTIVITY_KINDS = {
     "login": ["first_login"],
-    "project": ["register", "upload", "update_info", "rollback", "slug", "env", "stop", "start", "self_delete"],
+    "project": ["register", "upload", "update_info", "rollback", "slug", "env", "stop", "start", "self_delete", "token_create", "token_revoke"],
     "admin": ["admin_stop", "delete", "import_users", "settings", "redeploy_all", "add_user", "add_test_user", "delete_test_user", "delete_user"],
 }
 TODAY_ACTIONS = ["first_login", "register", "upload", "update_info"]

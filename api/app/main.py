@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from app.config import get_settings
 from app.errors import APIError, api_error_handler
 from app.middleware import SecurityGuard
-from app.routers import admin, auth, me, projects, public
+from app.routers import admin, agent, auth, me, projects, public
 
 app = FastAPI(title="science26", docs_url="/api/docs", openapi_url="/api/openapi.json")
 
@@ -32,6 +32,8 @@ async def validation_handler(_, exc: RequestValidationError):
 
 for r in (auth.router, me.router, projects.router, public.router, admin.router):
     app.include_router(r, prefix="/api/v1")
+# MCP(/api/mcp)와 AI 1회용 업로드(/api/v1/agent/upload/…). 경로를 라우터 안에 직접 적었다
+app.include_router(agent.router)
 
 
 @app.get("/api/health")

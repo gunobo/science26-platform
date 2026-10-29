@@ -12,6 +12,7 @@ import argparse
 import asyncio
 import base64
 import io
+import json
 import secrets
 import sys
 import time
@@ -31,6 +32,7 @@ EMAIL = "e2e-test@science26.local"
 STUDENT_NO = "9999"
 SLUG = "e2e-test"
 STATIC_MARK = "science26-e2e-static"
+MCP_MARK = "science26-e2e-mcp"
 TERMINAL = {"active", "failed", "superseded"}
 # 1x1 PNG (스크린샷 자리)
 TESTFLIGHT = "https://testflight.apple.com/join/E2Etest1"
@@ -255,6 +257,60 @@ class E2E:
         else:
             print("SKIP  APK (--apk 로 APK 경로를 주면 테스트)")
 
+    async def mcp(self) -> None:
+        """AI 연결: 토큰 만들기 → MCP 로 1회용 주소 받기 → curl 처럼 올리기 → 배포 확인 → 보안 확인 → 토큰 지우기."""
+        r = await self.api.post("/projects/me/tokens", json={"name": "E2E"})
+        if not record("AI 토큰 만들기", r.status_code == 201, r.text[:120] if r.status_code != 201 else ""):
+            return
+        token, token_id = r.json()["token"], r.json()["id"]
+        url = f"{self.upload}/api/mcp"
+        auth = {"Authorization": f"Bearer {token}"}
+        n = 0
+
+        async def call(method, params=None, headers=None):
+            nonlocal n
+            n += 1
+            async with httpx.AsyncClient(timeout=60) as c:  # 쿠키 없는 새 클라이언트 (CLI 도구처럼)
+                return await c.post(url, json={"jsonrpc": "2.0", "id": n, "method": method, "params": params or {}},
+                                    headers={**auth, **(headers or {})})
+
+        async def tool(name, args=None):
+            res = (await call("tools/call", {"name": name, "arguments": args or {}})).json()["result"]
+            return res["isError"], res["content"][0]["text"]
+
+        try:
+            init = await call("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "e2e", "version": "1"}})
+            tools = await call("tools/list")
+            record("MCP 연결·도구 목록", init.status_code == 200 and len(tools.json()["result"]["tools"]) == 6)
+
+            async with httpx.AsyncClient(timeout=20) as c:
+                no_token = await c.post(url, json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+            browser = await call("tools/list", headers={"Origin": "https://science26.bssm.dev"})
+            record("MCP 토큰 없음·브라우저 차단", no_token.status_code == 401 and browser.status_code == 403,
+                   f"HTTP {no_token.status_code}/{browser.status_code}")
+
+            err, text = await tool("create_upload", {"type": "static"})
+            if not record("MCP 1회용 업로드 주소", not err, text[:160] if err else ""):
+                return
+            upload_url = json.loads(text)["upload_url"]
+            html = f"<!doctype html><meta charset=utf-8><title>{MCP_MARK}</title><p>{MCP_MARK}</p>"
+            files = {"file": ("index.html", html.encode(), "text/html")}
+            async with httpx.AsyncClient(timeout=60) as c:
+                up = await c.post(upload_url, files=files)
+                again = await c.post(upload_url, files=files)
+            if not record("MCP 업로드 접수", up.status_code == 202, up.text[:160] if up.status_code != 202 else ""):
+                return
+            record("업로드 주소 재사용 차단", again.status_code == 404, f"HTTP {again.status_code}")
+            if await self.deployed("MCP 배포", await self.wait_release(up.json()["release_id"], 240)):
+                code, page = await self.page_text()
+                record("MCP 배포 페이지 열림", code == 200 and MCP_MARK in page, f"HTTP {code}")
+            err, text = await tool("release_status")
+            record("MCP 배포 결과 조회", not err and '"active"' in text)
+        finally:
+            d = await self.api.delete(f"/projects/me/tokens/{token_id}")
+            after = await call("tools/list")
+            record("토큰 지우면 바로 막힘", d.status_code == 200 and after.status_code == 401, f"HTTP {after.status_code}")
+
     async def delete_project(self, quiet: bool = False) -> None:
         r = await self.api.delete("/projects/me")
         done = False
@@ -287,6 +343,7 @@ async def main() -> int:
                 await t.stop_start()
             if static_id:
                 await t.rollback(static_id)
+            await t.mcp()
             if args.apk and not args.apk.exists():
                 record("APK", False, f"{args.apk} 없음")
             else:

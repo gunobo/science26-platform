@@ -3,12 +3,12 @@ import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Linking, Pressable, ScrollView, Switch, Text, useWindowDimensions, View } from 'react-native';
 import {
   AndroidLogo, ArrowCounterClockwise, Eye, ArrowUpRight, Browser, ClockCounterClockwise, Copy, DeviceMobile, FileZip, FilmStrip, GearSix,
-  GithubLogo, Image as ImageIcon, Key, PencilSimple, Play, Plus, Robot, Stack, Stop, Terminal, Trash, UploadSimple,
+  GithubLogo, Image as ImageIcon, Key, PencilSimple, Play, Plug, Plus, Robot, Warning as WarningIcon, Stack, Stop, Terminal, Trash, UploadSimple,
 } from '@phosphor-icons/react';
 
-import { API_BASE, api, ApiError, json, Project, ProjectType, PUBLIC_HOST, Release, Warning } from '../api';
+import { API_BASE, api, ApiError, json, Project, ProjectType, PUBLIC_HOST, Release, UPLOAD_HOST, Warning } from '../api';
 import { font, radius, useTheme } from '../theme';
-import { Badge, Button, Card, Field, FilePick, Notice, Segmented, Skeleton, T } from '../ui';
+import { Badge, Button, Card, ConfirmDialog, Field, FilePick, Notice, Segmented, Skeleton, T } from '../ui';
 
 const BUSY_STATES = ['queued', 'validating', 'building', 'deploying'];
 
@@ -58,6 +58,7 @@ export default function DashboardScreen({ onEditInfo }: { onEditInfo: () => void
     <>
       <ReleasesCard releases={releases} activeId={project.active_release?.id} busy={busy} onWatch={setWatching} onChange={refresh} />
       {project.type === 'fullstack' && <EnvCard />}
+      <McpCard />
     </>
   );
 
@@ -183,6 +184,112 @@ function AiHelpCard({ slug }: { slug: string }) {
           </Step>
         </View>
       )}
+    </Card>
+  );
+}
+
+// ---- AI 코딩 도구에서 바로 배포 (MCP) ----
+
+type DeployToken = { id: string; name: string; prefix: string; created_at: string; expires_at: string; last_used_at: string | null };
+const MCP_URL = `https://${UPLOAD_HOST}/api/mcp`;
+const day = (iso: string) => new Date(iso).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
+
+function McpCard() {
+  const t = useTheme();
+  const [tokens, setTokens] = useState<DeployToken[] | null>(null);
+  const [created, setCreated] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [revoke, setRevoke] = useState<DeployToken | null>(null);
+
+  const load = useCallback(() => {
+    api<DeployToken[]>('/projects/me/tokens').then(setTokens).catch((e) => setError(e.message));
+  }, []);
+  useEffect(load, [load]);
+
+  const create = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const r = await api<DeployToken & { token: string }>('/projects/me/tokens', { method: 'POST', ...json({ name: 'AI 연결' }) });
+      setCreated(r.token);
+      load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const remove = async () => {
+    if (!revoke) return;
+    setBusy(true);
+    try {
+      await api(`/projects/me/tokens/${revoke.id}`, { method: 'DELETE' });
+      setRevoke(null);
+      load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const claude = `claude mcp add --transport http science26 ${MCP_URL} --header "Authorization: Bearer ${created ?? 'TOKEN'}"`;
+  const jsonCfg = JSON.stringify({ mcpServers: { science26: { url: MCP_URL, headers: { Authorization: `Bearer ${created ?? 'TOKEN'}` } } } }, null, 2);
+
+  return (
+    <Card title="AI에서 바로 배포 (MCP)" icon={Plug}>
+      <T variant="sub" style={{ marginBottom: 14 }}>
+        Claude Code, Cursor 같은 AI 도구에 연결하면 "science26 에 배포해줘" 한마디로 빌드, 업로드, 실패 로그 확인까지 해요. 이 토큰은 내 프로젝트에만 쓸 수 있어요.
+      </T>
+      {error ? <Notice kind="error" text={error} /> : null}
+
+      {created ? (
+        <View style={{ gap: 10, marginBottom: 14 }}>
+          <Notice kind="warn" icon={WarningIcon} text="토큰은 지금 한 번만 보여요. 다른 사람에게 보여 주거나 GitHub 에 올리면 그 사람이 내 프로젝트를 바꿀 수 있어요. 새어 나갔으면 바로 지우세요." />
+          <T style={{ fontWeight: '700', color: t.text }}>Claude Code: 프로젝트 폴더 터미널에서</T>
+          <CopyBox text={claude} wrap />
+          <T style={{ fontWeight: '700', color: t.text }}>Cursor 등: 내 컴퓨터 전체 설정 (~/.cursor/mcp.json)</T>
+          <CopyBox text={jsonCfg} wrap />
+          <T variant="small">
+            프로젝트 폴더 안 설정 파일(.mcp.json, .cursor/mcp.json)에 넣으면 git 으로 같이 올라갈 수 있어요. 위처럼 내 컴퓨터 설정에만 넣으세요. 연결한 뒤 AI 에게 "science26 에 배포해줘" 라고 말하면 돼요.
+          </T>
+          <View style={{ alignSelf: 'flex-start' }}>
+            <Button label="다 적었어요" kind="secondary" small onPress={() => setCreated(null)} />
+          </View>
+        </View>
+      ) : null}
+
+      {!tokens && !error && <Skeleton h={48} />}
+      {tokens?.map((tk) => (
+        <View key={tk.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderTopWidth: 1, borderTopColor: t.border }}>
+          <Key size={17} color={t.textMuted} />
+          <View style={{ flex: 1 }}>
+            <T variant="mono" style={{ color: t.text }}>{tk.prefix}…</T>
+            <T variant="small">
+              {day(tk.expires_at)}까지 · {tk.last_used_at ? `마지막 사용 ${day(tk.last_used_at)}` : '아직 안 씀'}
+            </T>
+          </View>
+          <Button label="지우기" kind="ghost" small icon={Trash} onPress={() => setRevoke(tk)} />
+        </View>
+      ))}
+      <View style={{ alignSelf: 'flex-start', marginTop: 10 }}>
+        <Button label="토큰 만들기" icon={Plus} small busy={busy} disabled={(tokens?.length ?? 0) >= 3} onPress={create} />
+      </View>
+      {tokens && tokens.length >= 3 && <T variant="small" style={{ marginTop: 6 }}>토큰은 3개까지예요. 안 쓰는 토큰을 지워 주세요.</T>}
+      <T variant="small" style={{ marginTop: 10 }}>토큰은 30일 뒤 만료돼요. 모바일 앱(APK)은 여기서 올려야 해요.</T>
+
+      <ConfirmDialog
+        open={!!revoke}
+        title="이 토큰을 지울까요?"
+        confirmLabel="지우기"
+        danger
+        busy={busy}
+        onConfirm={remove}
+        onCancel={() => setRevoke(null)}
+      >
+        <T>{revoke?.prefix}… 토큰으로 연결한 AI 도구는 바로 배포할 수 없게 돼요.</T>
+      </ConfirmDialog>
     </Card>
   );
 }

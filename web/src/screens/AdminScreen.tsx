@@ -741,6 +741,8 @@ const ACTIONS: Record<string, { label: string; kind: Exclude<Kind, 'all'>; icon:
   add_test_user: { label: '테스트 계정 추가', kind: 'admin', icon: UserPlus },
   delete_test_user: { label: '테스트 계정 삭제', kind: 'admin', icon: Trash },
   delete_user: { label: '학생 계정 삭제', kind: 'admin', icon: Trash },
+  token_create: { label: 'AI 연결 토큰 만들기', kind: 'project', icon: Key },
+  token_revoke: { label: 'AI 연결 토큰 지우기', kind: 'project', icon: Key },
 };
 
 function ago(iso: string) {

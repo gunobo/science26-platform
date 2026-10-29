@@ -143,6 +143,22 @@ class AuditLog(Base):
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class DeployToken(Base):
+    """AI 코딩 도구(MCP)용 배포 토큰. 학생 자기 프로젝트에만 쓸 수 있다. 원문은 저장하지 않고 SHA-256 만 둔다."""
+
+    __tablename__ = "deploy_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(Text, default="")
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    # 화면에서 어떤 토큰인지 알아보게 앞부분만 (s26_ab12…)
+    prefix: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class PlatformSetting(Base):
     """관리자 설정(업로드 마감, 리소스 한도). 명세의 5개 테이블 외 추가분."""
 
