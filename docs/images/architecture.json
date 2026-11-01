@@ -1,0 +1,291 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "science26 플랫폼 구조",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    {
+      "id": "users",
+      "type": "external",
+      "label": "학생 · 방문자",
+      "sublabel": "브라우저",
+      "pos": [
+        40,
+        300
+      ],
+      "size": [
+        130,
+        60
+      ]
+    },
+    {
+      "id": "ai-tools",
+      "type": "external",
+      "label": "AI 코딩 도구",
+      "sublabel": "Claude Code · Codex",
+      "pos": [
+        40,
+        470
+      ],
+      "size": [
+        150,
+        60
+      ]
+    },
+    {
+      "id": "traefik",
+      "type": "cloud",
+      "label": "Traefik",
+      "sublabel": "리버스 프록시",
+      "pos": [
+        260,
+        300
+      ],
+      "size": [
+        130,
+        60
+      ]
+    },
+    {
+      "id": "dashboard",
+      "type": "frontend",
+      "label": "대시보드",
+      "sublabel": "Expo Web",
+      "pos": [
+        480,
+        130
+      ],
+      "size": [
+        130,
+        60
+      ]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "FastAPI",
+      "sublabel": "업로드 · 인증 · MCP",
+      "pos": [
+        480,
+        300
+      ],
+      "size": [
+        150,
+        60
+      ]
+    },
+    {
+      "id": "postgres",
+      "type": "database",
+      "label": "PostgreSQL",
+      "sublabel": "플랫폼 DB + 학생별 DB",
+      "pos": [
+        470,
+        470
+      ],
+      "size": [
+        170,
+        60
+      ]
+    },
+    {
+      "id": "redis",
+      "type": "messagebus",
+      "label": "Redis",
+      "sublabel": "arq 큐 · 잠금 · 빌드 로그",
+      "pos": [
+        720,
+        300
+      ],
+      "size": [
+        170,
+        60
+      ]
+    },
+    {
+      "id": "worker",
+      "type": "backend",
+      "label": "arq 워커",
+      "sublabel": "빌드 · 배포 · 감시",
+      "pos": [
+        970,
+        300
+      ],
+      "size": [
+        150,
+        60
+      ]
+    },
+    {
+      "id": "students",
+      "type": "frontend",
+      "label": "학생 프로젝트",
+      "sublabel": "stu-{학번}-v{n}",
+      "pos": [
+        970,
+        130
+      ],
+      "size": [
+        150,
+        60
+      ],
+      "tag": "학생별 격리"
+    },
+    {
+      "id": "discord",
+      "type": "external",
+      "label": "Discord",
+      "sublabel": "장애 · 활동 알림",
+      "pos": [
+        970,
+        620
+      ],
+      "size": [
+        150,
+        60
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "NCP 서버 · Docker Compose",
+      "wraps": [
+        "traefik",
+        "dashboard",
+        "api",
+        "postgres",
+        "redis",
+        "worker",
+        "students"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "users-to-traefik",
+      "from": "users",
+      "to": "traefik",
+      "label": "HTTPS",
+      "variant": "emphasis"
+    },
+    {
+      "id": "traefik-to-dashboard",
+      "from": "traefik",
+      "to": "dashboard",
+      "label": "upload 호스트",
+      "fromSide": "top",
+      "toSide": "left",
+      "via": [
+        [
+          325,
+          160
+        ]
+      ]
+    },
+    {
+      "id": "traefik-to-api",
+      "from": "traefik",
+      "to": "api",
+      "label": "/api"
+    },
+    {
+      "id": "traefik-to-students",
+      "from": "traefik",
+      "to": "students",
+      "label": "/students/{slug}/",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "top",
+      "via": [
+        [
+          325,
+          80
+        ],
+        [
+          1045,
+          80
+        ]
+      ]
+    },
+    {
+      "id": "ai-to-api",
+      "from": "ai-tools",
+      "to": "api",
+      "label": "MCP · Bearer 토큰",
+      "variant": "security"
+    },
+    {
+      "id": "api-to-postgres",
+      "from": "api",
+      "to": "postgres",
+      "label": "SQL",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        555,
+        415
+      ]
+    },
+    {
+      "id": "api-to-redis",
+      "from": "api",
+      "to": "redis",
+      "label": "작업 넣기",
+      "variant": "dashed"
+    },
+    {
+      "id": "redis-to-worker",
+      "from": "redis",
+      "to": "worker"
+    },
+    {
+      "id": "worker-to-students",
+      "from": "worker",
+      "to": "students",
+      "label": "compose build · up"
+    },
+    {
+      "id": "worker-to-discord",
+      "from": "worker",
+      "to": "discord",
+      "label": "웹훅",
+      "variant": "dashed",
+      "labelAt": [
+        1045,
+        590
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "배포 흐름",
+      "items": [
+        "업로드 → 큐 → 워커가 빌드·실행",
+        "헬스체크 통과 후 옛 버전 정리",
+        "빌드 로그는 Redis Stream → SSE"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "학생별 격리",
+      "items": [
+        "컨테이너 · 네트워크 · DB 분리",
+        "메모리 · CPU · 프로세스 수 제한",
+        "안 쓰는 풀스택은 재웠다 깨움"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "AI 연결 (MCP)",
+      "items": [
+        "학생별 토큰, 해시로만 저장",
+        "1회용 업로드 주소",
+        "업로드 속 토큰 발견 시 자동 폐기"
+      ]
+    }
+  ]
+}
