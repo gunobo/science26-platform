@@ -23,7 +23,7 @@ from app.queue import acquire_project_lock, claim_runtime_action, enqueue, lock_
 from app.redis_client import redis
 from app.security import admin_user, audit
 from app.services import visits
-from app.services.projects import project_out, student_url
+from app.services.projects import SUBJECTS, project_out, student_url
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -90,20 +90,20 @@ async def students_export(
     wb = Workbook()
     ws = wb.active
     ws.title = filter_label
-    headers = ["학년", "반", "번호", "학번", "이름", "이메일", "상태", "로그인 여부", "프로젝트 제목", "주소", "메모"]
+    headers = ["학년", "반", "번호", "학번", "이름", "이메일", "상태", "로그인 여부", "과목", "프로젝트 제목", "주소", "메모"]
     ws.append(headers)
     for r in rows:
         p = r["project"] or {}
         ws.append([_cell(v) for v in (
             int(r["grade"]), int(r["class"]), int(r["number"]), r["student_no"], r["name"], r["email"],
-            STATE_LABELS.get(r["state"], r["state"]), "O" if r["logged_in"] else "X", p.get("title") or "", p.get("url") or "", r["memo"],
+            STATE_LABELS.get(r["state"], r["state"]), "O" if r["logged_in"] else "X", SUBJECTS.get(p.get("subject") or "", ""), p.get("title") or "", p.get("url") or "", r["memo"],
         )])
     head_fill = PatternFill("solid", fgColor="064E3B")
     for c in ws[1]:
         c.font = Font(bold=True, color="FFFFFF")
         c.fill = head_fill
         c.alignment = Alignment(horizontal="center")
-    for col, width in zip("ABCDEFGHIJK", (6, 5, 6, 8, 12, 28, 10, 11, 28, 48, 40)):
+    for col, width in zip("ABCDEFGHIJKL", (6, 5, 6, 8, 12, 28, 10, 11, 10, 28, 48, 40)):
         ws.column_dimensions[col].width = width
     ws.freeze_panes = "A2"
     if rows:
@@ -157,7 +157,7 @@ async def _student_rows(db: AsyncSession) -> list[dict]:
             "memo": user.admin_memo,
             "state": state,
             "project": None if project is None else {
-                "slug": project.slug, "title": project.title, "type": project.type.value if project.type else None,
+                "slug": project.slug, "title": project.title, "subject": project.subject, "type": project.type.value if project.type else None,
                 "status": project.status.value, "url": student_url(project.slug) if project.active_release_id else None,
             },
         })

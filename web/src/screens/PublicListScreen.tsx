@@ -2,10 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { Image, Linking, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { ArrowUpRight, Browser, DeviceMobile, Eye, Fire, Flask, Info, MagnifyingGlass, Stack, UploadSimple } from '@phosphor-icons/react';
 
-import { api, PublicCard, UPLOAD_HOST } from '../api';
+import { api, PublicCard, SUBJECTS, subjectLabel, UPLOAD_HOST } from '../api';
 import SiteFooter from '../SiteFooter';
 import { font, radius, useTheme } from '../theme';
-import { Button, Icon, layout, Skeleton, T } from '../ui';
+import { Button, Icon, layout, Skeleton, SUBJECT_ICONS, T } from '../ui';
 
 type Filter = 'all' | 'static' | 'fullstack' | 'app';
 const TYPES: Record<Exclude<Filter, 'all'>, { label: string; icon: Icon }> = {
@@ -33,6 +33,7 @@ export default function PublicListScreen() {
   const [filter, setFilter] = useState<Filter>('all');
   const [sort, setSort] = useState<Sort>('no');
   const [room, setRoom] = useState('all');
+  const [subject, setSubject] = useState('all');
   const [showFormula, setShowFormula] = useState(false);
   const { width } = useWindowDimensions();
   const cols = width >= 1080 ? 3 : width >= 680 ? 2 : 1;
@@ -43,6 +44,8 @@ export default function PublicListScreen() {
   }, []);
 
   // 반 목록은 공개된 프로젝트가 있는 반만 (9로 시작하는 테스트 학번은 뺀다)
+  // 과목 탭은 공개된 프로젝트가 있는 과목만
+  const subjects = useMemo(() => SUBJECTS.filter((s) => (cards ?? []).some((p) => p.subject === s.value)), [cards]);
   const rooms = useMemo(() => [...new Set((cards ?? []).filter((p) => p.student_no[0] !== '9').map((p) => roomOf(p.student_no)))].sort(), [cards]);
   // 인기 TOP 3 는 필터와 상관없이 전체에서 정한다
   const ranks = useMemo(() => {
@@ -57,6 +60,7 @@ export default function PublicListScreen() {
       (p) =>
         (filter === 'all' || p.type === filter) &&
         (room === 'all' || roomOf(p.student_no) === room) &&
+        (subject === 'all' || p.subject === subject) &&
         (!q || [p.title, p.name, p.student_no, p.slug, p.description].some((v) => v?.toLowerCase().includes(q))),
     );
     const by: Record<Sort, (a: PublicCard, b: PublicCard) => number> = {
@@ -67,7 +71,7 @@ export default function PublicListScreen() {
     };
     // 동점이면 학번순 (서버가 학번순으로 준다 → 안정 정렬)
     return [...list].sort((a, b) => by[sort](a, b) || a.student_no.localeCompare(b.student_no));
-  }, [cards, query, filter, room, sort]);
+  }, [cards, query, filter, room, subject, sort]);
 
   return (
     <ScrollView style={{ backgroundColor: t.bg }}>
@@ -112,6 +116,15 @@ export default function PublicListScreen() {
             ))}
           </View>
         </View>
+
+        {subjects.length > 0 && (
+          <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginTop: -8, marginBottom: 24 }}>
+            <Chip label="모든 과목" active={subject === 'all'} onPress={() => setSubject('all')} />
+            {subjects.map((s) => (
+              <Chip key={s.value} label={s.label} icon={SUBJECT_ICONS[s.value]} active={subject === s.value} onPress={() => setSubject(s.value)} />
+            ))}
+          </View>
+        )}
 
         {cards && cards.length > 0 && (
           <View style={{ marginTop: -10, marginBottom: 24, gap: 10 }}>
@@ -263,7 +276,7 @@ export function ProjectCard({ p, width, rank }: { p: PublicCard; width: `${numbe
               <View style={{ flex: 1 }}>
                 <T variant="heading" numberOfLines={1}>{p.title}</T>
                 <T variant="sub" numberOfLines={1} style={{ marginTop: 2 }}>
-                  {p.name} {p.student_no}{type ? `  |  ${type.label}` : ''}
+                  {p.name} {p.student_no}{[subjectLabel(p.subject), type?.label].filter(Boolean).map((x) => `  |  ${x}`).join('')}
                 </T>
               </View>
               <ArrowUpRight size={20} color={hovered ? t.accent : t.textMuted} weight="bold" />

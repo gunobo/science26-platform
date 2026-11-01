@@ -9,7 +9,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
-import { IconProps } from '@phosphor-icons/react';
+import { Atom, Dna, Flask, GlobeHemisphereWest, IconProps } from '@phosphor-icons/react';
 import { createPortal } from 'react-dom';
 
 import { font, radius, Theme, useTheme } from './theme';
@@ -19,6 +19,9 @@ const web = (s: Record<string, unknown>) => s as unknown as ViewStyle;
 const ease = web({ transitionProperty: 'transform, background-color, border-color, opacity', transitionDuration: '160ms', transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)' });
 
 export type Icon = ComponentType<IconProps>;
+
+// 과목 아이콘 (api.ts SUBJECTS 의 value 와 짝)
+export const SUBJECT_ICONS: Record<string, Icon> = { physics: Atom, chemistry: Flask, biology: Dna, earth: GlobeHemisphereWest };
 
 export function T({ children, style, variant = 'body', numberOfLines }: { children: ReactNode; style?: TextStyle | TextStyle[]; variant?: 'display' | 'title' | 'heading' | 'body' | 'sub' | 'small' | 'mono'; numberOfLines?: number }) {
   const t = useTheme();

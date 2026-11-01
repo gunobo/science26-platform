@@ -6,7 +6,7 @@ import {
   Sliders, Sparkle, Stop, Trash, UploadSimple, UsersThree,
 } from '@phosphor-icons/react';
 
-import { API_BASE, api, json, NOTICE_CHANGED, Project } from '../api';
+import { API_BASE, api, json, NOTICE_CHANGED, Project, subjectLabel } from '../api';
 import { font, radius, useTheme } from '../theme';
 import { Badge, Button, Card, ConfirmDialog, Field, FilePick, Icon, Notice, Segmented, Skeleton, T } from '../ui';
 
@@ -63,7 +63,7 @@ type StudentRow = {
   is_admin?: boolean;
   memo?: string;
   state: 'deployed' | 'building' | 'failed' | 'no_upload' | 'not_logged_in';
-  project: { slug: string; title: string; type: string | null; status: string; url: string | null } | null;
+  project: { slug: string; title: string; subject?: string; type: string | null; status: string; url: string | null } | null;
 };
 type StudentFilter = 'all' | 'missing' | 'not_logged_in' | 'deployed';
 
@@ -268,7 +268,7 @@ function StudentsCard() {
                     </View>
                     {s.project?.url ? (
                       <Pressable onPress={() => Linking.openURL(s.project!.url!)}>
-                        <T variant="small" numberOfLines={1} style={{ color: t.accent }}>{s.project.title || `/${s.project.slug}`}</T>
+                        <T variant="small" numberOfLines={1} style={{ color: t.accent }}>{subjectLabel(s.project.subject) ? `[${subjectLabel(s.project.subject)}] ` : ''}{s.project.title || `/${s.project.slug}`}</T>
                       </Pressable>
                     ) : (
                       <T variant="small" numberOfLines={1}>{s.state === 'not_logged_in' ? s.email : s.project?.title || '올린 프로젝트 없음'}</T>

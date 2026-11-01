@@ -6,9 +6,9 @@ import {
   GithubLogo, Image as ImageIcon, Key, PencilSimple, Play, Plug, Plus, Robot, Warning as WarningIcon, Stack, Stop, Terminal, Trash, UploadSimple,
 } from '@phosphor-icons/react';
 
-import { API_BASE, api, ApiError, json, Project, ProjectType, PUBLIC_HOST, Release, UPLOAD_HOST, Warning } from '../api';
+import { API_BASE, api, ApiError, json, Project, ProjectType, PUBLIC_HOST, Release, Subject, SUBJECTS, UPLOAD_HOST, Warning } from '../api';
 import { font, radius, useTheme } from '../theme';
-import { Badge, Button, Card, ConfirmDialog, Field, FilePick, Notice, Segmented, Skeleton, T } from '../ui';
+import { Badge, Button, Card, ConfirmDialog, Field, FilePick, Notice, Segmented, Skeleton, SUBJECT_ICONS, T } from '../ui';
 
 const BUSY_STATES = ['queued', 'validating', 'building', 'deploying'];
 
@@ -52,7 +52,8 @@ export default function DashboardScreen({ onEditInfo }: { onEditInfo: () => void
   const main = (
     <>
       <AiHelpCard slug={project.slug} />
-      <UploadCard disabled={busy} onUploaded={(id) => { setWatching(id); refresh(); }} />
+      {!project.subject && <SubjectCard onChange={refresh} />}
+      <UploadCard disabled={busy || !project.subject} onUploaded={(id) => { setWatching(id); refresh(); }} />
       {watching && <BuildLogCard key={watchSeq} releaseId={watching} onDone={refresh} />}
       {project.active_release && <RuntimeCard project={project} onChange={refresh} />}
     </>
@@ -688,6 +689,7 @@ function RuntimeCard({ project, onChange }: { project: Project; onChange: () => 
 export function SettingsCard({ project, onChange }: { project: Project; onChange: () => void }) {
   const [title, setTitle] = useState(project.title);
   const [description, setDescription] = useState(project.description);
+  const [subject, setSubject] = useState<Subject | ''>(project.subject);
   const [slug, setSlug] = useState(project.slug);
   const [thumb, setThumb] = useState<File | null>(null);
   const [msg, setMsg] = useState<{ text: string; kind: 'ok' | 'error' } | null>(null);
@@ -699,6 +701,7 @@ export function SettingsCard({ project, onChange }: { project: Project; onChange
     const fd = new FormData();
     fd.append('title', title);
     fd.append('description', description);
+    if (subject) fd.append('subject', subject);
     fd.append('slug', slug.trim().toLowerCase());
     if (thumb) fd.append('thumbnail', thumb);
     try {
@@ -719,9 +722,42 @@ export function SettingsCard({ project, onChange }: { project: Project; onChange
       <Field label="링크 이름" value={slug} onChangeText={setSlug} autoCapitalize="none" placeholder={project.student_no} hint={`${preview}\n영문 소문자, 숫자, 하이픈만 쓸 수 있어요. 학번 주소로 들어와도 새 주소로 연결돼요.`} />
       <Field label="제목" value={title} onChangeText={setTitle} placeholder="전시관에 보일 제목" />
       <Field label="설명" value={description} onChangeText={setDescription} multiline placeholder="어떤 프로젝트인지 한두 문장으로" />
+      <T variant="small" style={{ marginBottom: 6, fontWeight: '600' }}>과목</T>
+      <Segmented value={subject} options={SUBJECT_OPTIONS} onChange={setSubject} />
       <FilePick icon={ImageIcon} label="썸네일 이미지 (전시관 카드에 보여요)" file={thumb?.name} onPress={async () => setThumb((await pick(['image/*']))[0] ?? null)} />
       {msg && <Notice kind={msg.kind} text={msg.text} />}
       <Button label="저장" onPress={save} busy={saving} />
+    </Card>
+  );
+}
+
+// ---- 과목 ----
+
+const SUBJECT_OPTIONS = SUBJECTS.map((s) => ({ ...s, icon: SUBJECT_ICONS[s.value] }));
+
+// 과목을 아직 안 골랐으면 업로드 위에 띄우고, 고를 때까지 업로드를 막는다
+function SubjectCard({ onChange }: { onChange: () => void }) {
+  const [saving, setSaving] = useState<Subject | null>(null);
+  const [error, setError] = useState('');
+  const choose = async (s: Subject) => {
+    if (saving) return;
+    setSaving(s);
+    setError('');
+    const fd = new FormData();
+    fd.append('subject', s);
+    try {
+      await api('/projects/me', { method: 'PATCH', body: fd });
+      onChange();
+    } catch (e: any) {
+      setError(e.message);
+      setSaving(null);
+    }
+  };
+  return (
+    <Card title="과목을 골라 주세요" icon={SUBJECT_ICONS.physics}>
+      <T style={{ marginBottom: 12 }}>내 프로젝트가 어느 과목 주제인지 골라야 올릴 수 있어요. 전시관에서 과목별로 모아 보여 줘요. 나중에 마이페이지에서 바꿀 수 있어요.</T>
+      <Segmented value={saving ?? ('' as Subject | '')} options={SUBJECT_OPTIONS} onChange={(v) => v && choose(v)} />
+      {error ? <Notice kind="error" text={error} /> : null}
     </Card>
   );
 }

@@ -57,6 +57,15 @@ export type Release = {
 };
 export type ProjectType = 'static' | 'fullstack' | 'app';
 export type ProjectStatus = 'empty' | 'building' | 'running' | 'sleeping' | 'stopped' | 'failed';
+// 과학 과목 (api/app/services/projects.py SUBJECTS 와 같게). '' 은 아직 안 고른 것
+export type Subject = 'physics' | 'chemistry' | 'biology' | 'earth';
+export const SUBJECTS: { value: Subject; label: string }[] = [
+  { value: 'physics', label: '물리학' },
+  { value: 'chemistry', label: '화학' },
+  { value: 'biology', label: '생명과학' },
+  { value: 'earth', label: '지구과학' },
+];
+export const subjectLabel = (s?: string) => SUBJECTS.find((x) => x.value === s)?.label ?? '';
 export type Project = {
   visits?: { total: number; today: number };
   student_no: string;
@@ -64,6 +73,7 @@ export type Project = {
   type: ProjectType | null;
   title: string;
   description: string;
+  subject: Subject | '';
   thumbnail_url: string | null;
   listed: boolean;
   status: ProjectStatus;
@@ -79,6 +89,7 @@ export type PublicCard = {
   title: string;
   description: string;
   type: ProjectType;
+  subject?: Subject | '';
   status: ProjectStatus;
   thumbnail_url: string | null;
   url: string;

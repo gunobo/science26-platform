@@ -217,7 +217,8 @@ def test_students_export_xlsx(client, monkeypatch):
                 "state": state, "project": None}
 
     async def fake_rows(db):
-        return [row("1401", "김하린", "deployed"), row("1402", "=HYPERLINK(\"x\")", "no_upload"),
+        first = {**row("1401", "김하린", "deployed"), "project": {"subject": "chemistry", "title": "분자", "url": "u"}}
+        return [first, row("1402", "=HYPERLINK(\"x\")", "no_upload"),
                 row("1403", "이서준", "not_logged_in"), row("1501", "박도윤", "no_upload"),
                 row("9901", "테스트", "no_upload", test=True)]
 
@@ -230,6 +231,7 @@ def test_students_export_xlsx(client, monkeypatch):
     try:
         r = client.get("/api/v1/admin/students/export.xlsx?room=1-4&filter=missing")
         bad = client.get("/api/v1/admin/students/export.xlsx?room=x")
+        everyone = client.get("/api/v1/admin/students/export.xlsx?room=1-4&filter=all")
     finally:
         app.dependency_overrides.clear()
 
@@ -240,6 +242,8 @@ def test_students_export_xlsx(client, monkeypatch):
     assert [d[3] for d in data] == ["1402", "1403"]          # 1학년 4반의 미제출·미접속만, 테스트 계정 제외
     assert data[0][4] == "'=HYPERLINK(\"x\")"                 # 수식으로 실행되지 않게
     assert bad.status_code == 422
+    sheet = load_workbook(io.BytesIO(everyone.content)).active
+    assert sheet["I1"].value == "과목" and sheet["I2"].value == "화학"
 
 
 def test_project_patch_route_and_newline_normalization():

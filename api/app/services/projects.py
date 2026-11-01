@@ -57,6 +57,10 @@ def release_out(r: Release | None) -> dict | None:
     }
 
 
+# 과학 과목. 키는 DB·API 값, 값은 화면에 보이는 이름 (web/src/api.ts SUBJECTS 와 같게)
+SUBJECTS = {"physics": "물리학", "chemistry": "화학", "biology": "생명과학", "earth": "지구과학"}
+
+
 def project_out(p: Project, active: Release | None = None, latest: Release | None = None) -> dict:
     return {
         "student_no": p.student_no,
@@ -64,6 +68,7 @@ def project_out(p: Project, active: Release | None = None, latest: Release | Non
         "type": p.type.value if p.type else None,
         "title": p.title,
         "description": p.description,
+        "subject": p.subject,
         "thumbnail_url": thumbnail_url(p),
         "listed": p.listed,
         "status": p.status.value,

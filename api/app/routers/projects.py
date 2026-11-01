@@ -25,7 +25,7 @@ from app.redis_client import redis
 from app.services import agent, buildlog
 from app.services import validation as v
 from app.services import visits
-from app.services.projects import student_url, get_or_create_project, get_project, next_version, project_out, release_out
+from app.services.projects import SUBJECTS, student_url, get_or_create_project, get_project, next_version, project_out, release_out
 
 router = APIRouter(prefix="/projects/me", tags=["projects"])
 
@@ -40,7 +40,7 @@ async def my_project(user: User = Depends(mapped_student), db: AsyncSession = De
     project = await get_project(db, user.student_no)
     if project is None:
         return {"student_no": user.student_no, "slug": user.student_no, "status": "empty", "type": None, "listed": True,
-                "title": "", "description": "", "thumbnail_url": None, "active_release": None,
+                "title": "", "description": "", "subject": "", "thumbnail_url": None, "active_release": None,
                 "latest_release": None, "url": None, "last_request_at": None, "visits": {"total": 0, "today": 0}}
     active = await db.get(Release, project.active_release_id) if project.active_release_id else None
     latest = (
@@ -62,6 +62,7 @@ def _norm(text: str) -> str:
 async def update_project(
     title: str | None = Form(None),
     description: str | None = Form(None),
+    subject: str | None = Form(None),
     slug: str | None = Form(None),
     listed: bool | None = Form(None),
     thumbnail: UploadFile | None = File(None),
@@ -70,13 +71,18 @@ async def update_project(
 ):
     s = get_settings()
     project = await get_or_create_project(db, user)
-    before = {"title": project.title, "description": _norm(project.description), "slug": project.slug, "listed": project.listed}
+    before = {"title": project.title, "description": _norm(project.description), "slug": project.slug, "listed": project.listed,
+              "subject": project.subject}
     if title is not None:
         project.title = title.strip()[:100]
     if description is not None:
         project.description = _norm(description)[:2000]
     if listed is not None:
         project.listed = listed
+    if subject is not None:
+        if subject not in SUBJECTS:
+            raise upload_invalid("과목은 물리학·화학·생명과학·지구과학 중에서 골라 주세요")
+        project.subject = subject
 
     slug_changed = False
     if slug is not None and slug != project.slug:
@@ -106,6 +112,7 @@ async def update_project(
     changed = [name for name, on in (
         (f"제목: {before['title'] or '(없음)'} → {project.title}", project.title != before["title"]),
         ("설명", project.description != before["description"]),
+        (f"과목: {SUBJECTS.get(project.subject, '')}", project.subject != before["subject"]),
         (f"링크 이름 {before['slug']} → {project.slug}", slug_changed),
         ("썸네일", thumbnail is not None and bool(thumbnail.filename)),
         ("전시관 " + ("공개" if project.listed else "숨김"), listed is not None and listed != before["listed"]),
