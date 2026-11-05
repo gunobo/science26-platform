@@ -74,6 +74,8 @@ export type Project = {
   title: string;
   description: string;
   subject: Subject | '';
+  unit: string;
+  effect: string;
   thumbnail_url: string | null;
   listed: boolean;
   status: ProjectStatus;
@@ -90,6 +92,8 @@ export type PublicCard = {
   description: string;
   type: ProjectType;
   subject?: Subject | '';
+  unit?: string;
+  effect?: string;
   status: ProjectStatus;
   thumbnail_url: string | null;
   url: string;

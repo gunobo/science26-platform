@@ -69,6 +69,8 @@ def project_out(p: Project, active: Release | None = None, latest: Release | Non
         "title": p.title,
         "description": p.description,
         "subject": p.subject,
+        "unit": p.unit,
+        "effect": p.effect,
         "thumbnail_url": thumbnail_url(p),
         "listed": p.listed,
         "status": p.status.value,

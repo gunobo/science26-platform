@@ -65,6 +65,8 @@ async def public_projects(request: Request, db: AsyncSession = Depends(get_db)):
             "title": project.title or f"{project.student_no} 프로젝트",
             "description": project.description,
             "subject": project.subject,
+            "unit": project.unit,
+            "effect": project.effect,
             "type": card["type"],
             "status": card["status"],
             "thumbnail_url": thumbnail_url(project),

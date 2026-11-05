@@ -93,6 +93,9 @@ class Project(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     # 과학 과목 (services.projects.SUBJECTS 의 키). 비어 있으면 아직 안 고른 것
     subject: Mapped[str] = mapped_column(String(16), default="")
+    # 연관 단원 (교과서 단원명, 자유 입력)과 과학적 효과 (이 프로젝트로 무엇을 배우고 알 수 있는지)
+    unit: Mapped[str] = mapped_column(Text, default="")
+    effect: Mapped[str] = mapped_column(Text, default="")
     thumbnail_path: Mapped[str | None] = mapped_column(Text)
     # 전시관(공개 목록)에 보일지. 숨겨도 링크로는 열린다.
     listed: Mapped[bool] = mapped_column(Boolean, default=True)

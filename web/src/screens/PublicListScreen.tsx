@@ -61,7 +61,7 @@ export default function PublicListScreen() {
         (filter === 'all' || p.type === filter) &&
         (room === 'all' || roomOf(p.student_no) === room) &&
         (subject === 'all' || p.subject === subject) &&
-        (!q || [p.title, p.name, p.student_no, p.slug, p.description].some((v) => v?.toLowerCase().includes(q))),
+        (!q || [p.title, p.name, p.student_no, p.slug, p.description, p.unit, p.effect].some((v) => v?.toLowerCase().includes(q))),
     );
     const by: Record<Sort, (a: PublicCard, b: PublicCard) => number> = {
       hot: (a, b) => (b.hot ?? 0) - (a.hot ?? 0),
@@ -283,6 +283,16 @@ export function ProjectCard({ p, width, rank }: { p: PublicCard; width: `${numbe
             </View>
             {p.description ? (
               <T variant="sub" numberOfLines={2} style={{ marginTop: 6, paddingHorizontal: 2 }}>{p.description}</T>
+            ) : null}
+            {p.unit ? (
+              <T variant="small" numberOfLines={1} style={{ marginTop: 8, paddingHorizontal: 2 }}>
+                <T variant="small" style={{ fontWeight: '600' }}>연관 단원  </T>{p.unit}
+              </T>
+            ) : null}
+            {p.effect ? (
+              <T variant="small" numberOfLines={2} style={{ marginTop: 4, paddingHorizontal: 2 }}>
+                <T variant="small" style={{ fontWeight: '600' }}>과학적 효과  </T>{p.effect}
+              </T>
             ) : null}
           </View>
         )}

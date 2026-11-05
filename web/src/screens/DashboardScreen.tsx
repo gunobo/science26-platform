@@ -690,6 +690,8 @@ export function SettingsCard({ project, onChange }: { project: Project; onChange
   const [title, setTitle] = useState(project.title);
   const [description, setDescription] = useState(project.description);
   const [subject, setSubject] = useState<Subject | ''>(project.subject);
+  const [unit, setUnit] = useState(project.unit ?? '');
+  const [effect, setEffect] = useState(project.effect ?? '');
   const [slug, setSlug] = useState(project.slug);
   const [thumb, setThumb] = useState<File | null>(null);
   const [msg, setMsg] = useState<{ text: string; kind: 'ok' | 'error' } | null>(null);
@@ -702,6 +704,8 @@ export function SettingsCard({ project, onChange }: { project: Project; onChange
     fd.append('title', title);
     fd.append('description', description);
     if (subject) fd.append('subject', subject);
+    fd.append('unit', unit);
+    fd.append('effect', effect);
     fd.append('slug', slug.trim().toLowerCase());
     if (thumb) fd.append('thumbnail', thumb);
     try {
@@ -724,6 +728,8 @@ export function SettingsCard({ project, onChange }: { project: Project; onChange
       <Field label="설명" value={description} onChangeText={setDescription} multiline placeholder="어떤 프로젝트인지 한두 문장으로" />
       <T variant="small" style={{ marginBottom: 6, fontWeight: '600' }}>과목</T>
       <Segmented value={subject} options={SUBJECT_OPTIONS} onChange={setSubject} />
+      <Field label="연관 단원" value={unit} onChangeText={setUnit} placeholder="예: 통합과학 Ⅰ - 물질의 규칙성과 결합" />
+      <Field label="과학적 효과" value={effect} onChangeText={setEffect} multiline placeholder="이 프로젝트로 어떤 과학 개념을 배우거나 확인할 수 있는지" />
       <FilePick icon={ImageIcon} label="썸네일 이미지 (전시관 카드에 보여요)" file={thumb?.name} onPress={async () => setThumb((await pick(['image/*']))[0] ?? null)} />
       {msg && <Notice kind={msg.kind} text={msg.text} />}
       <Button label="저장" onPress={save} busy={saving} />
