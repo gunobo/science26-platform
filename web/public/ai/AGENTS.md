@@ -14,7 +14,7 @@
 
 | 프로젝트 | 타입 | 올리는 것 |
 |---|---|---|
-| HTML/CSS/JS, React·Vue·Svelte(Vite), Expo Web 등 서버 없이 돌아가는 것 | **정적 웹** | 빌드 결과 폴더를 zip (또는 index.html 하나) |
+| HTML/CSS/JS, React·Vue·Svelte(Vite), Expo Web 등 서버 없이 돌아가는 것 | **정적 웹** | 빌드 결과 폴더를 zip (또는 index.html 하나), 또는 빌드 결과가 들어 있는 GitHub 공개 저장소 |
 | 백엔드(Node, Python, Java 등)나 DB가 필요한 웹 | **풀스택** | 프로젝트 전체 zip 또는 GitHub 공개 저장소 |
 | 안드로이드 앱 | **앱** | 서명된 APK + 스크린샷 1~5장 |
 
@@ -161,7 +161,7 @@ services:
 ## science26 MCP 가 연결돼 있으면
 `science26` MCP 도구가 보이면 학생 대신 직접 배포해도 돼 (학생이 배포해 달라고 했을 때만).
 1. `project_status` 로 지금 상태와 링크 이름 확인
-2. 빌드해서 zip 을 만든 뒤 `create_upload` (type: static 또는 fullstack) → 돌려받은 `curl` 명령으로 올리기. 공개 GitHub 저장소면 `deploy_github`
+2. 빌드해서 zip 을 만든 뒤 `create_upload` (type: static 또는 fullstack) → 돌려받은 `curl` 명령으로 올리기. 공개 GitHub 저장소면 `deploy_github` (정적 웹은 type: static, 저장소에 index.html·빌드 결과가 있어야 해)
 3. `release_status` 로 결과 확인. 실패하면 `log_tail` 을 읽고 고쳐서 다시 올리기 (10분에 5번까지라 무작정 반복하지 마)
 4. 끝나면 학생에게 주소와 바꾼 내용을 알려 줘
 - 처음 연결하면 `.gitignore` 에 `.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `.codex/config.toml`, `opencode.json`, `.env`, `.env.*` 가 있는지 보고 없으면 추가해

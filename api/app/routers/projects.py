@@ -257,8 +257,6 @@ async def start_release(
     warnings: list[dict] = []
     try:
         if repo_url:
-            if type != ProjectType.fullstack:
-                raise upload_invalid("GitHub 저장소는 풀스택 타입에서만 받을 수 있습니다")
             v.check_repo(repo_url.strip(), branch.strip())
             kind, ref = SourceKind.git, f"{repo_url.strip()}@{branch.strip()}"
         elif file is not None and file.filename:

@@ -357,3 +357,23 @@ def test_mcp_instructions_ask_for_gitignore(env):
     for path in (".mcp.json", ".cursor/mcp.json", ".vscode/mcp.json", ".codex/config.toml", "opencode.json", ".env"):
         assert path in text
     assert ".gitignore" in text
+
+
+def test_deploy_github_type(env, monkeypatch):
+    """정적 웹도 GitHub 저장소로 배포할 수 있다. type 을 안 주면 예전처럼 풀스택."""
+    from app.models import ProjectType
+
+    _, _, c = env
+    seen = []
+
+    async def fake(db, user, type, repo_url=None, branch="main", via=""):
+        seen.append((type, repo_url, branch))
+        return {"release_id": "r", "version": 1, "warnings": []}
+
+    monkeypatch.setattr(agent_router, "start_release", fake)
+    args = {"repo_url": "https://github.com/a/b"}
+    rpc(c, "tools/call", {"name": "deploy_github", "arguments": {**args, "type": "static", "branch": "gh-pages"}})
+    rpc(c, "tools/call", {"name": "deploy_github", "arguments": args})
+    bad = rpc(c, "tools/call", {"name": "deploy_github", "arguments": {**args, "type": "app"}}).json()["result"]
+    assert seen == [(ProjectType.static, "https://github.com/a/b", "gh-pages"), (ProjectType.fullstack, "https://github.com/a/b", "main")]
+    assert bad["isError"]

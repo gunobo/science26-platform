@@ -88,12 +88,13 @@ TOOLS = [
     },
     {
         "name": "deploy_github",
-        "description": "공개 GitHub 저장소를 풀스택(docker compose)으로 배포한다. 저장소 루트에 docker-compose.yml 이 있어야 한다.",
+        "description": "공개 GitHub 저장소를 배포한다. fullstack 은 저장소에 docker-compose.yml, static 은 index.html 이 있어야 한다 (정적은 빌드 결과가 저장소에 들어 있어야 함).",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "repo_url": {"type": "string", "description": "https://github.com/아이디/저장소"},
                 "branch": {"type": "string", "default": "main"},
+                "type": {"type": "string", "enum": ["static", "fullstack"], "default": "fullstack", "description": "static = 정적 웹, fullstack = docker compose"},
             },
             "required": ["repo_url"],
             "additionalProperties": False,
@@ -182,7 +183,10 @@ async def _call(name: str, args: dict, user: User, db: AsyncSession) -> dict:
     if name == "deploy_github":
         repo = str(args.get("repo_url", "")).strip()
         branch = str(args.get("branch") or "main").strip()
-        out = await start_release(db, user, ProjectType.fullstack, repo_url=repo, branch=branch, via=VIA)
+        kind = args.get("type") or "fullstack"
+        if kind not in ("static", "fullstack"):
+            return _tool_error("type 은 static 또는 fullstack 이어야 해요")
+        out = await start_release(db, user, ProjectType(kind), repo_url=repo, branch=branch, via=VIA)
         return _text({**out, "next": "release_status 로 빌드 결과를 확인해"})
 
     if name in ("release_status", "rollback"):

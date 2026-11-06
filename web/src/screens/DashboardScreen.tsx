@@ -441,7 +441,8 @@ function UploadCard({ disabled, onUploaded }: { disabled: boolean; onUploaded: (
         shots.forEach((f) => fd.append('screenshots', f));
       } else {
         fd.append('type', type);
-        if (type === 'fullstack' && source === 'git') {
+        if (source === 'git') {
+          if (!repo.trim()) throw new Error('저장소 주소를 입력하세요');
           fd.append('repo_url', repo.trim());
           fd.append('branch', branch.trim() || 'main');
         } else {
@@ -463,6 +464,32 @@ function UploadCard({ disabled, onUploaded }: { disabled: boolean; onUploaded: (
     }
   };
 
+  // 정적·풀스택 공통: zip(파일) 또는 GitHub 저장소
+  const sourcePick = (filePicker: ReactNode) => (
+    <>
+      <Segmented
+        value={source}
+        onChange={setSource}
+        options={[
+          { value: 'file', label: 'zip 업로드', icon: FileZip },
+          { value: 'git', label: 'GitHub 저장소', icon: GithubLogo },
+        ]}
+      />
+      {source === 'file' ? (
+        filePicker
+      ) : (
+        <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap' }}>
+          <View style={{ flex: 3, minWidth: 220 }}>
+            <Field label="저장소 주소" value={repo} onChangeText={setRepo} autoCapitalize="none" placeholder="https://github.com/아이디/저장소" />
+          </View>
+          <View style={{ flex: 1, minWidth: 120 }}>
+            <Field label="브랜치" value={branch} onChangeText={setBranch} autoCapitalize="none" />
+          </View>
+        </View>
+      )}
+    </>
+  );
+
   return (
     <Card title="새 버전 올리기" icon={UploadSimple}>
       <Segmented
@@ -476,33 +503,19 @@ function UploadCard({ disabled, onUploaded }: { disabled: boolean; onUploaded: (
       />
       {type === 'static' && (
         <>
-          <FilePick icon={FileZip} label="빌드 결과 zip 또는 index.html (최대 100MB)" file={file?.name} onPress={async () => setFile((await pick(['application/zip', '.zip', 'text/html', '.html']))[0] ?? null)} />
+          {sourcePick(
+            <FilePick icon={FileZip} label="빌드 결과 zip 또는 index.html (최대 100MB)" file={file?.name} onPress={async () => setFile((await pick(['application/zip', '.zip', 'text/html', '.html']))[0] ?? null)} />,
+          )}
           <Hint>
+            {source === 'git' ? <>저장소 안에 <Code>index.html</Code> 이 있어야 해요 (맨 위가 아니면 그 파일이 든 폴더를 찾아요). Vite·React 처럼 빌드가 필요한 프로젝트는 빌드 결과(<Code>dist</Code>)를 저장소에 함께 올려야 해요. </> : null}
             페이지는 <Code>/students/링크이름/</Code> 아래에서 열려요. 에셋 경로는 상대경로여야 해서 Vite는 <Code>base: './'</Code>, Expo는 <Code>experiments.baseUrl</Code> 을 설정하세요.
           </Hint>
         </>
       )}
       {type === 'fullstack' && (
         <>
-          <Segmented
-            value={source}
-            onChange={setSource}
-            options={[
-              { value: 'file', label: 'zip 업로드', icon: FileZip },
-              { value: 'git', label: 'GitHub 저장소', icon: GithubLogo },
-            ]}
-          />
-          {source === 'file' ? (
-            <FilePick icon={FileZip} label="프로젝트 zip (최대 200MB)" file={file?.name} onPress={async () => setFile((await pick(['application/zip', '.zip']))[0] ?? null)} />
-          ) : (
-            <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap' }}>
-              <View style={{ flex: 3, minWidth: 220 }}>
-                <Field label="저장소 주소" value={repo} onChangeText={setRepo} autoCapitalize="none" placeholder="https://github.com/아이디/저장소" />
-              </View>
-              <View style={{ flex: 1, minWidth: 120 }}>
-                <Field label="브랜치" value={branch} onChangeText={setBranch} autoCapitalize="none" />
-              </View>
-            </View>
+          {sourcePick(
+            <FilePick icon={FileZip} label="프로젝트 zip (최대 200MB)" file={file?.name} onPress={async () => setFile((await pick(['application/zip', '.zip']))[0] ?? null)} />,
           )}
           <Hint>
             루트에 <Code>docker-compose.yml</Code> 이 필요해요. 공개할 서비스에 <Code>science26.public=true</Code>, API 서비스에는 <Code>science26.api=true</Code> 라벨을 붙이세요. DB와 Redis는 넣지 말고 자동으로 들어가는 <Code>DATABASE_URL</Code>, <Code>REDIS_URL</Code> 을 쓰면 돼요.

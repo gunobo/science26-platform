@@ -104,8 +104,9 @@ async def prepare_source(release: Release, rdir: Path, emit) -> Path:
         except d.CommandError as e:
             raise v.ValidationError(f"저장소를 받을 수 없습니다 (공개 저장소·브랜치 이름 확인)\n{e}")
         shutil.rmtree(src / ".git", ignore_errors=True)
-        if _dir_size(src) > s.max_fullstack_bytes:
-            raise v.ValidationError("소스가 200MB를 넘습니다")
+        limit = s.max_static_bytes if release.type == ProjectType.static else s.max_fullstack_bytes
+        if _dir_size(src) > limit:
+            raise v.ValidationError(f"소스가 {limit // 1024 // 1024}MB를 넘습니다")
     elif release.source_kind == SourceKind.zip and not src.exists():
         v.safe_extract(Path(release.source_ref), src, s.max_unpacked_bytes)
 
