@@ -208,11 +208,17 @@ server {
     listen 8080;
     root /usr/share/nginx/html;
     index index.html;
+    # 캐시 지시가 없으면 브라우저가 Last-Modified 를 보고 몇 시간씩 확인도 안 하고 예전 파일을 쓴다
+    # (zip 안 파일 수정 시각이 오래될수록 길어진다). 새 버전을 올려도 예전 페이지가 보이지 않게,
+    # 매번 서버에 확인하게 한다. 바뀐 게 없으면 304 라서 부담은 작다.
+    add_header Cache-Control "no-cache" always;
     location / {
         try_files $uri $uri/ /index.html;
     }
     location ~* \\.apk$ {
         types { application/vnd.android.package-archive apk; }
+        # location 안에 add_header 가 있으면 바깥 것을 물려받지 않아서 다시 적는다
+        add_header Cache-Control "no-cache" always;
         add_header Content-Disposition "attachment";
     }
 }

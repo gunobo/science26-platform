@@ -555,3 +555,12 @@ def test_upload_during_delete_says_deleting(monkeypatch):
     with pytest.raises(APIError) as e:
         asyncio.run(queue.acquire_project_lock("1203", "release-b"))
     assert e.value.code == "BUILD_IN_PROGRESS"
+
+
+def test_static_pages_revalidate():
+    """새 버전을 올렸는데 브라우저가 예전 페이지를 보여 주지 않게, 학생 정적 페이지는 매번 서버에 확인한다."""
+    from app.services.compose import STATIC_NGINX_CONF
+
+    server, apk = STATIC_NGINX_CONF.split("location ~*")
+    assert 'add_header Cache-Control "no-cache" always;' in server
+    assert 'add_header Cache-Control "no-cache" always;' in apk  # location 안 add_header 는 바깥 것을 물려받지 않는다
