@@ -74,6 +74,8 @@ export type Project = {
   title: string;
   description: string;
   subject: Subject | '';
+  // 삭제 잡이 아직 처리 중 (끝나면 status 가 'empty' 가 된다)
+  deleting?: boolean;
   unit: string;
   effect: string;
   thumbnail_url: string | null;

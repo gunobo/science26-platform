@@ -18,7 +18,7 @@ from app.errors import APIError, not_found, upload_invalid
 from app.models import (
     DeployToken, EnvVar, Project, ProjectStatus, ProjectType, Release, ReleaseState, Role, SourceKind, User,
 )
-from app.queue import acquire_project_lock, claim_runtime_action, enqueue, release_project_lock
+from app.queue import acquire_project_lock, claim_runtime_action, enqueue, is_deleting, release_project_lock
 from app.notify import activity
 from app.security import audit, decrypt, encrypt, mapped_student, rate_limit
 from app.redis_client import redis
@@ -38,8 +38,10 @@ ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 @router.get("")
 async def my_project(user: User = Depends(mapped_student), db: AsyncSession = Depends(get_db)):
     project = await get_project(db, user.student_no)
+    # 삭제 잡은 워커가 처리해서, 지우기를 누른 뒤에도 잠시 프로젝트가 남아 있다. 화면이 그동안 기다리게 알려 준다.
+    deleting = await is_deleting(user.student_no)
     if project is None:
-        return {"student_no": user.student_no, "slug": user.student_no, "status": "empty", "type": None, "listed": True,
+        return {"student_no": user.student_no, "slug": user.student_no, "status": "empty", "type": None, "listed": True, "deleting": deleting,
                 "title": "", "description": "", "subject": "", "unit": "", "effect": "", "thumbnail_url": None, "active_release": None,
                 "latest_release": None, "url": None, "last_request_at": None, "visits": {"total": 0, "today": 0}}
     active = await db.get(Release, project.active_release_id) if project.active_release_id else None
@@ -50,6 +52,7 @@ async def my_project(user: User = Depends(mapped_student), db: AsyncSession = De
     ).scalar_one_or_none()
     out = project_out(project, active, latest)
     out["visits"] = (await visits.counts([project.student_no]))[project.student_no]
+    out["deleting"] = deleting
     return out
 
 
@@ -72,6 +75,9 @@ async def update_project(
     db: AsyncSession = Depends(get_db),
 ):
     s = get_settings()
+    # 지우는 중인 프로젝트를 고치면 곧 같이 지워진다 (과목을 골라도 사라지는 문제)
+    if await is_deleting(user.student_no):
+        raise APIError(409, "DELETE_IN_PROGRESS", "프로젝트를 지우는 중이에요. 삭제가 끝나면 다시 시도하세요")
     project = await get_or_create_project(db, user)
     before = {"title": project.title, "description": _norm(project.description), "slug": project.slug, "listed": project.listed,
               "subject": project.subject, "unit": project.unit, "effect": _norm(project.effect)}

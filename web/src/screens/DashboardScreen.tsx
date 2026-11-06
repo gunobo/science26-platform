@@ -40,6 +40,13 @@ export default function DashboardScreen({ onEditInfo }: { onEditInfo: () => void
     refresh();
   }, [refresh]);
 
+  // 삭제가 끝날 때까지 몇 초마다 다시 확인한다
+  useEffect(() => {
+    if (!project?.deleting) return;
+    const id = setInterval(refresh, 3000);
+    return () => clearInterval(id);
+  }, [project?.deleting, refresh]);
+
   if (!project)
     return (
       <View style={{ gap: 16 }}>
@@ -52,8 +59,9 @@ export default function DashboardScreen({ onEditInfo }: { onEditInfo: () => void
   const main = (
     <>
       <AiHelpCard slug={project.slug} />
-      {!project.subject && <SubjectCard onChange={refresh} />}
-      <UploadCard disabled={busy || !project.subject} onUploaded={(id) => { setWatching(id); refresh(); }} />
+      {project.deleting && <Notice kind="info" text="프로젝트를 지우는 중이에요. 끝나면 자동으로 새로 올릴 수 있게 바뀌어요." />}
+      {!project.subject && !project.deleting && <SubjectCard onChange={refresh} />}
+      <UploadCard disabled={busy || !project.subject || !!project.deleting} onUploaded={(id) => { setWatching(id); refresh(); }} />
       {watching && <BuildLogCard key={watchSeq} releaseId={watching} onDone={refresh} />}
       {project.active_release && <RuntimeCard project={project} onChange={refresh} />}
     </>

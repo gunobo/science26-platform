@@ -140,8 +140,14 @@ function DeleteCard({ project, onDeleted }: { project: Project; onDeleted: () =>
     setError('');
     try {
       await api('/projects/me', { method: 'DELETE' });
-      // 워커가 스택과 DB 를 지우는 데 몇 초 걸린다
-      setTimeout(onDeleted, 3000);
+      // 워커가 스택과 DB 를 지우는 데 몇 초, 빌드가 몰리면 몇 분 걸린다. 끝날 때까지 기다렸다가 넘어간다
+      // (바로 넘어가면 지워지기 전 프로젝트가 보이고, 그때 올리면 막힌다)
+      for (let i = 0; i < 90; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const p = await api<Project>('/projects/me').catch(() => null);
+        if (p && !p.deleting) break;
+      }
+      onDeleted();
     } catch (e: any) {
       setError(e.message);
       setBusy(false);
@@ -165,6 +171,7 @@ function DeleteCard({ project, onDeleted }: { project: Project; onDeleted: () =>
             placeholder={project.slug}
           />
           {error ? <Notice kind="error" text={error} /> : null}
+          {busy ? <Notice kind="info" text="지우는 중이에요. 끝나면 대시보드로 넘어가요. 사람이 많으면 1~2분 걸릴 수 있어요." /> : null}
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <Button label="영구 삭제" kind="danger" icon={Trash} busy={busy} disabled={confirm.trim() !== project.slug} onPress={remove} />
             <Button label="취소" kind="ghost" onPress={() => { setOpen(false); setConfirm(''); }} />

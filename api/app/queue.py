@@ -46,9 +46,19 @@ def lock_key(student_no: str) -> str:
     return f"lock:project:{student_no}"
 
 
+DELETE_LOCKS = ("delete", "delete-account")
+
+
+async def is_deleting(student_no: str) -> bool:
+    """프로젝트 삭제 잡이 아직 끝나지 않았는지 (워커가 바쁘면 대기열에서 몇 분 기다릴 수도 있다)."""
+    return await redis.get(lock_key(student_no)) in DELETE_LOCKS
+
+
 async def acquire_project_lock(student_no: str, owner: str, ttl: int = 1800) -> None:
     """동시 배포 방지. 워커가 잡을 끝내면 푼다."""
     if not await redis.set(lock_key(student_no), owner, nx=True, ex=ttl):
+        if await is_deleting(student_no):
+            raise APIError(409, "DELETE_IN_PROGRESS", "프로젝트를 지우는 중이에요. 삭제가 끝나면 다시 올릴 수 있어요")
         raise APIError(409, "BUILD_IN_PROGRESS", "이미 빌드·배포가 진행 중입니다")
 
 

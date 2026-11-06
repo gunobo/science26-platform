@@ -523,3 +523,35 @@ async def test_container_alert_only_for_active_version(monkeypatch):
     monkeypatch.setattr(worker, "notify", notify)
     await worker.collect_stats({})
     assert sent == ["stu-1102-v5-web-1 컨테이너 상태: Exited (1)"]
+
+
+def test_upload_during_delete_says_deleting(monkeypatch):
+    """삭제 잡이 끝나기 전에 올리면 '빌드 중' 이 아니라 '지우는 중' 이라고 알려 준다."""
+    import asyncio
+
+    from app import queue
+    from app.errors import APIError
+
+    store: dict[str, str] = {}
+
+    async def fake_set(key, value, nx=False, ex=None):
+        if nx and key in store:
+            return None
+        store[key] = value
+        return True
+
+    async def fake_get(key):
+        return store.get(key)
+
+    monkeypatch.setattr(queue.redis, "set", fake_set)
+    monkeypatch.setattr(queue.redis, "get", fake_get)
+    asyncio.run(queue.acquire_project_lock("1411", "delete"))
+    assert asyncio.run(queue.is_deleting("1411")) and not asyncio.run(queue.is_deleting("1203"))
+    with pytest.raises(APIError) as e:
+        asyncio.run(queue.acquire_project_lock("1411", "release-id"))
+    assert e.value.code == "DELETE_IN_PROGRESS"
+
+    asyncio.run(queue.acquire_project_lock("1203", "release-a"))
+    with pytest.raises(APIError) as e:
+        asyncio.run(queue.acquire_project_lock("1203", "release-b"))
+    assert e.value.code == "BUILD_IN_PROGRESS"
