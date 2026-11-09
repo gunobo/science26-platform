@@ -237,13 +237,15 @@ export function ProjectCard({ p, width, rank }: { p: PublicCard; width: `${numbe
       >
         {({ hovered }: any) => (
           <View>
-            <View style={{ aspectRatio: 4 / 3, borderRadius: radius.card, overflow: 'hidden', backgroundColor: t.surfaceAlt, borderWidth: 1, borderColor: hovered ? t.accent : t.border }}>
+            {/* 16:9: 학생 썸네일은 대부분 화면 캡처라 4:3 으로 자르면 양옆 글자가 잘린다 */}
+            <View style={{ aspectRatio: 16 / 9, borderRadius: radius.card, overflow: 'hidden', backgroundColor: t.surfaceAlt, borderWidth: 1, borderColor: hovered ? t.accent : t.border }}>
               {p.thumbnail_url ? (
                 <Image source={{ uri: p.thumbnail_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" accessibilityLabel={`${p.title} 썸네일`} />
               ) : (
-                <View style={{ flex: 1, padding: 22, paddingTop: rank != null ? 52 : 22, paddingBottom: p.views != null ? 48 : 22, justifyContent: 'space-between' }}>
-                  {type && <type.icon size={26} color={t.textMuted} weight="duotone" />}
-                  <Text numberOfLines={2} style={{ fontFamily: font.family, fontSize: 30, lineHeight: 36, fontWeight: '800', letterSpacing: -0.8, color: t.textSub }}>
+                <View style={{ flex: 1, padding: 20, paddingBottom: p.views != null ? 44 : 20, justifyContent: 'space-between' }}>
+                  {/* 인기 배지가 왼쪽 위를 차지하면 유형 아이콘은 뺀다 (16:9 는 세로가 짧다) */}
+                  {type && rank == null ? <type.icon size={24} color={t.textMuted} weight="duotone" /> : <View />}
+                  <Text numberOfLines={2} style={{ fontFamily: font.family, fontSize: 26, lineHeight: 31, fontWeight: '800', letterSpacing: -0.8, color: t.textSub }}>
                     {p.title}
                   </Text>
                 </View>
