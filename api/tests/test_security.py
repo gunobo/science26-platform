@@ -581,3 +581,18 @@ def test_guide_file_checked_by_content():
     ]:
         with pytest.raises(v.ValidationError):
             v.check_guide(name, data, 20 * mb)
+
+
+def test_project_detail_and_guide_routes():
+    """상세 페이지·가이드북 뷰어가 쓰는 공개 API. 가이드북 링크는 우리 뷰어(/guide/학번)로 간다."""
+    from types import SimpleNamespace
+
+    from app.routers import public
+    from app.services.projects import guide_file_url, guide_url
+
+    paths = {r.path for r in public.router.routes}
+    assert {"/public/projects/{key}", "/public/guides/{student_no}/info", "/public/guides/{student_no}"} <= paths
+    p = SimpleNamespace(student_no="1312", guide_path="/data/guides/1312.pdf")
+    assert guide_url(p).endswith("/guide/1312")
+    assert guide_file_url(p).endswith("/api/v1/public/guides/1312")
+    assert guide_url(SimpleNamespace(student_no="1312", guide_path=None)) is None

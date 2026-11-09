@@ -5,6 +5,8 @@ import { Flask, Megaphone, ShieldCheck, SignOut, SquaresFour, Timer, UserCircle 
 import { api, ApiError, isPublicHost, Me, NOTICE_CHANGED, PUBLIC_HOST } from './api';
 import AdminScreen from './screens/AdminScreen';
 import DashboardScreen from './screens/DashboardScreen';
+import GuideViewerScreen, { guidePathNo } from './screens/GuideViewerScreen';
+import ProjectDetailScreen, { projectPathKey } from './screens/ProjectDetailScreen';
 import LoginScreen from './screens/LoginScreen';
 import MyPageScreen from './screens/MyPageScreen';
 import PublicListScreen from './screens/PublicListScreen';
@@ -17,6 +19,22 @@ installWebFont();
 export default function App() {
   const scheme = useColorScheme();
   const theme = scheme === 'dark' ? dark : light;
+  // /guide/{학번}: 이용 가이드북 뷰어 (공개·대시보드 주소 어디서든)
+  const guideNo = guidePathNo();
+  if (guideNo)
+    return (
+      <ThemeContext.Provider value={theme}>
+        <GuideViewerScreen studentNo={guideNo} />
+      </ThemeContext.Provider>
+    );
+  // /project/{링크 이름}: 프로젝트 상세
+  const projectKey = projectPathKey();
+  if (projectKey)
+    return (
+      <ThemeContext.Provider value={theme}>
+        <View style={{ flex: 1, backgroundColor: theme.bg }}><ProjectDetailScreen projectKey={projectKey} /></View>
+      </ThemeContext.Provider>
+    );
   return (
     <ThemeContext.Provider value={theme}>
       <View style={{ flex: 1, backgroundColor: theme.bg }}>{isPublicHost() ? <PublicListScreen /> : <Workspace />}</View>

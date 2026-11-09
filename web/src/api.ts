@@ -9,6 +9,8 @@ const isPublicHost = () =>
 
 export const API_BASE = isPublicHost() ? `https://${UPLOAD_HOST}/api/v1` : '/api/v1';
 export { isPublicHost };
+// 프로젝트 상세 페이지 주소. 공개 도메인에서는 그대로, 대시보드에서는 공개 도메인으로 보낸다.
+export const projectPageUrl = (slug: string) => (isPublicHost() ? '' : `https://${PUBLIC_HOST}`) + `/project/${encodeURIComponent(slug)}`;
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string, public detail?: unknown) {
@@ -80,7 +82,8 @@ export type Project = {
   effect: string;
   thumbnail_url: string | null;
   // 이용 가이드북 (PDF·이미지). guide_name 은 올린 파일 이름
-  guide_url: string | null;
+  guide_url: string | null; // 우리 뷰어 (/guide/{학번})
+  guide_file_url: string | null; // 파일 자체
   guide_name: string;
   listed: boolean;
   status: ProjectStatus;
@@ -102,8 +105,12 @@ export type PublicCard = {
   status: ProjectStatus;
   thumbnail_url: string | null;
   guide_url?: string | null;
+  guide_file_url?: string | null;
+  guide_name?: string;
+  guide_kind?: 'pdf' | 'image' | null;
   url: string;
   views?: number;
+  views_today?: number;
   hot?: number;
   updated_at?: string;
 };

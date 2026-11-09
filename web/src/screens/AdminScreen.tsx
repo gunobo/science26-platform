@@ -2,7 +2,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Linking, Pressable, Switch, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import {
-  ArrowClockwise, ArrowCounterClockwise, ArrowsClockwise, Bell, CaretLeft, CaretRight, ClipboardText, Copy, MicrosoftExcelLogo, Student, UserPlus, FileCsv, Key, MagnifyingGlass, NotePencil, PencilSimple, Play, SignIn,
+  ArrowClockwise, ArrowCounterClockwise, ArrowsClockwise, Bell, BookOpen, DownloadSimple, Notebook, CaretLeft, CaretRight, ClipboardText, Copy, MicrosoftExcelLogo, Student, UserPlus, FileCsv, Key, MagnifyingGlass, NotePencil, PencilSimple, Play, SignIn,
   Sliders, Sparkle, Stop, Trash, UploadSimple, UsersThree,
 } from '@phosphor-icons/react';
 
@@ -27,6 +27,7 @@ export default function AdminScreen() {
     <View>
       <StudentsCard />
       <ProjectsCard />
+      <ProjectContentCard />
       <ActivityCard />
       <View style={{ flexDirection: wide ? 'row' : 'column', gap: wide ? 20 : 0, alignItems: 'flex-start' }}>
         <View style={{ flex: 1, minWidth: 0, width: wide ? undefined : '100%' }}>
@@ -562,6 +563,99 @@ function ProjectsCard() {
         ))}
       </View>
       {rows && rows.length === 0 ? <T variant="sub">아직 프로젝트가 없어요. 학번을 등록하면 학생들이 올리기 시작할 수 있어요.</T> : null}
+    </Card>
+  );
+}
+
+// ---- 학생 프로젝트 관리: 학생이 적은 내용(과목·연관 단원·과학적 효과)과 이용 가이드북 확인 ----
+
+type GuideFilter = 'all' | 'with' | 'without';
+const CONTENT_PAGE_SIZE = 10;
+
+function ProjectContentCard() {
+  const t = useTheme();
+  const [rows, setRows] = useState<AdminProject[] | null>(null);
+  const [error, setError] = useState('');
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<GuideFilter>('all');
+  const [page, setPage] = useState(1);
+
+  const load = useCallback(() => {
+    api<AdminProject[]>('/admin/projects').then((r) => { setRows(r); setError(''); }).catch((e) => setError(e.message));
+  }, []);
+  useEffect(load, [load]);
+
+  const withGuide = rows?.filter((p) => p.guide_url).length ?? 0;
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return rows?.filter((p) =>
+      (filter === 'all' || (filter === 'with') === !!p.guide_url) &&
+      (!q || [p.student_no, p.owner.name, p.title, p.slug, p.unit, p.effect, p.guide_name].some((v) => v?.toLowerCase().includes(q))),
+    ) ?? [];
+  }, [rows, query, filter]);
+  const pages = Math.max(1, Math.ceil(shown.length / CONTENT_PAGE_SIZE));
+  const current = Math.min(page, pages);
+  const pageRows = shown.slice((current - 1) * CONTENT_PAGE_SIZE, current * CONTENT_PAGE_SIZE);
+
+  const Line = ({ label, value }: { label: string; value?: string }) => (
+    <T variant="small" style={{ color: value ? t.textSub : t.textMuted }}>
+      <Text style={{ fontWeight: '700', color: t.text }}>{label}  </Text>{value || '(안 적음)'}
+    </T>
+  );
+
+  return (
+    <Card title="학생 프로젝트 관리" icon={Notebook} right={<Button label="새로고침" kind="ghost" small icon={ArrowsClockwise} onPress={load} />}>
+      {error ? <Notice kind="error" text={error} /> : null}
+      {rows && (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 28, marginBottom: 20 }}>
+          <Stat label="전체 프로젝트" value={rows.length} />
+          <Stat label="가이드북 올림" value={withGuide} />
+          <Stat label="가이드북 없음" value={rows.length - withGuide} />
+        </View>
+      )}
+      <Segmented<GuideFilter>
+        value={filter}
+        options={[{ value: 'all', label: '전체' }, { value: 'with', label: '가이드북 있음' }, { value: 'without', label: '가이드북 없음' }]}
+        onChange={(f) => { setFilter(f); setPage(1); }}
+      />
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: t.borderStrong, borderRadius: radius.control, paddingHorizontal: 12, marginBottom: 12, maxWidth: 360 }}>
+        <MagnifyingGlass size={17} color={t.textMuted} />
+        <TextInput value={query} onChangeText={(q) => { setQuery(q); setPage(1); }} placeholder="학번, 이름, 제목, 단원" placeholderTextColor={t.textMuted} style={{ flex: 1, fontFamily: font.family, fontSize: 14.5, color: t.text, paddingVertical: 9, outlineStyle: 'none' } as any} />
+      </View>
+      {!rows && !error && (
+        <View style={{ gap: 8 }}>
+          <Skeleton h={90} />
+          <Skeleton h={90} />
+        </View>
+      )}
+      <View style={{ gap: 8 }}>
+        {pageRows.map((p) => (
+          <View key={p.student_no} style={{ backgroundColor: t.surfaceAlt, borderRadius: radius.control, padding: 14, gap: 6 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <T variant="heading" style={{ fontSize: 15, width: 44 }}>{p.student_no}</T>
+              <T style={{ color: t.text, width: 72 }} numberOfLines={1}>{p.owner.name || '-'}</T>
+              <Pressable onPress={() => p.url && Linking.openURL(p.url)} style={{ flex: 1, minWidth: 160 }}>
+                <T variant="sub" numberOfLines={1} style={{ color: t.accent }}>{p.title || `/${p.slug}`}</T>
+              </Pressable>
+              {!p.listed && <T variant="small" style={{ fontWeight: '700' }}>전시관 숨김</T>}
+              {p.guide_url ? (
+                <>
+                  <Button label="가이드북 보기" kind="secondary" small icon={BookOpen} onPress={() => Linking.openURL(p.guide_url!)} />
+                  <Button label="내려받기" kind="ghost" small icon={DownloadSimple} onPress={() => Linking.openURL(`${p.guide_file_url}?download=true`)} />
+                </>
+              ) : (
+                <T variant="small" style={{ color: t.warn, fontWeight: '700' }}>가이드북 없음</T>
+              )}
+            </View>
+            {p.guide_url && p.guide_name ? <T variant="small" style={{ fontFamily: font.mono }} numberOfLines={1}>{p.guide_name}</T> : null}
+            <Line label="과목" value={subjectLabel(p.subject)} />
+            <Line label="연관 단원" value={p.unit} />
+            <Line label="과학적 효과" value={p.effect} />
+          </View>
+        ))}
+      </View>
+      {rows && shown.length === 0 ? <T variant="sub">조건에 맞는 프로젝트가 없어요.</T> : null}
+      {shown.length > CONTENT_PAGE_SIZE ? <Pager page={current} pages={pages} total={shown.length} onChange={setPage} /> : null}
     </Card>
   );
 }

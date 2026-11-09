@@ -42,6 +42,13 @@ def thumbnail_url(project: Project) -> str | None:
 
 
 def guide_url(project: Project) -> str | None:
+    """우리 PDF 뷰어 주소 (web 의 /guide/{학번}). 파일 자체는 guide_file_url."""
+    if not project.guide_path:
+        return None
+    return f"{get_settings().public_url}/guide/{project.student_no}"
+
+
+def guide_file_url(project: Project) -> str | None:
     if not project.guide_path:
         return None
     return f"{get_settings().upload_url}/api/v1/public/guides/{project.student_no}"
@@ -79,6 +86,7 @@ def project_out(p: Project, active: Release | None = None, latest: Release | Non
         "effect": p.effect,
         "thumbnail_url": thumbnail_url(p),
         "guide_url": guide_url(p),
+        "guide_file_url": guide_file_url(p),
         "guide_name": p.guide_name,
         "listed": p.listed,
         "status": p.status.value,

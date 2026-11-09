@@ -2,13 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { Image, Linking, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { ArrowUpRight, BookOpen, Browser, DeviceMobile, Eye, Fire, Flask, Info, MagnifyingGlass, Stack, UploadSimple } from '@phosphor-icons/react';
 
-import { api, PublicCard, SUBJECTS, subjectLabel, UPLOAD_HOST } from '../api';
+import { api, projectPageUrl, PublicCard, SUBJECTS, subjectLabel, UPLOAD_HOST } from '../api';
 import SiteFooter from '../SiteFooter';
 import { font, radius, useTheme } from '../theme';
 import { Button, Icon, layout, Skeleton, SUBJECT_ICONS, T } from '../ui';
 
 type Filter = 'all' | 'static' | 'fullstack' | 'app';
-const TYPES: Record<Exclude<Filter, 'all'>, { label: string; icon: Icon }> = {
+export const TYPES: Record<Exclude<Filter, 'all'>, { label: string; icon: Icon }> = {
   static: { label: '웹', icon: Browser },
   fullstack: { label: '웹앱', icon: Stack },
   app: { label: '앱', icon: DeviceMobile },
@@ -93,7 +93,7 @@ export default function PublicListScreen() {
             우리가 직접 만든{'\n'}과학 프로젝트
           </T>
           <T variant="body" style={{ marginTop: 14, fontSize: 17, lineHeight: 26 }}>
-            {cards ? `${cards.length}개의 프로젝트가 공개되어 있어요. ` : ''}눌러서 바로 체험해 보세요.
+            {cards ? `${cards.length}개의 프로젝트가 공개되어 있어요. ` : ''}눌러서 자세히 보고 체험해 보세요.
           </T>
         </View>
 
@@ -227,9 +227,9 @@ export function ProjectCard({ p, width, rank }: { p: PublicCard; width: `${numbe
   return (
     <View style={{ width, padding: 10 }}>
       <Pressable
-        onPress={() => p.url && Linking.openURL(p.url)}
+        onPress={() => (window.location.href = projectPageUrl(p.slug))}
         accessibilityRole="link"
-        accessibilityLabel={`${p.title} 열기`}
+        accessibilityLabel={`${p.title} 자세히 보기`}
         style={({ hovered, pressed }: any) => [
           { borderRadius: radius.card, transform: [{ translateY: hovered && !pressed ? -3 : 0 }] },
           { transitionProperty: 'transform', transitionDuration: '200ms', transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)' } as any,
@@ -284,6 +284,12 @@ export function ProjectCard({ p, width, rank }: { p: PublicCard; width: `${numbe
             {p.description ? (
               <T variant="sub" numberOfLines={2} style={{ marginTop: 6, paddingHorizontal: 2 }}>{p.description}</T>
             ) : null}
+            {p.guide_url ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8, paddingHorizontal: 2 }}>
+                <BookOpen size={14} color={t.accent} weight="bold" />
+                <T variant="small" style={{ color: t.accent, fontWeight: '700' }}>이용 가이드북 있음</T>
+              </View>
+            ) : null}
             {p.unit ? (
               <T variant="small" numberOfLines={1} style={{ marginTop: 8, paddingHorizontal: 2 }}>
                 <T variant="small" style={{ fontWeight: '600' }}>연관 단원  </T>{p.unit}
@@ -293,20 +299,6 @@ export function ProjectCard({ p, width, rank }: { p: PublicCard; width: `${numbe
               <T variant="small" numberOfLines={2} style={{ marginTop: 4, paddingHorizontal: 2 }}>
                 <T variant="small" style={{ fontWeight: '600' }}>과학적 효과  </T>{p.effect}
               </T>
-            ) : null}
-            {p.guide_url ? (
-              <Pressable
-                onPress={() => Linking.openURL(p.guide_url!)}
-                accessibilityRole="link"
-                accessibilityLabel={`${p.title} 이용 가이드북 열기`}
-                style={({ hovered }: any) => ({
-                  alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10, marginLeft: 2,
-                  borderWidth: 1, borderColor: hovered ? t.accent : t.border, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 6,
-                })}
-              >
-                <BookOpen size={15} color={t.accent} weight="bold" />
-                <T variant="small" style={{ fontWeight: '700', color: t.accent }}>이용 가이드북</T>
-              </Pressable>
             ) : null}
           </View>
         )}

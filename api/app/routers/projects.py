@@ -43,7 +43,7 @@ async def my_project(user: User = Depends(mapped_student), db: AsyncSession = De
     if project is None:
         return {"student_no": user.student_no, "slug": user.student_no, "status": "empty", "type": None, "listed": True, "deleting": deleting,
                 "title": "", "description": "", "subject": "", "unit": "", "effect": "", "thumbnail_url": None,
-                "guide_url": None, "guide_name": "", "active_release": None,
+                "guide_url": None, "guide_file_url": None, "guide_name": "", "active_release": None,
                 "latest_release": None, "url": None, "last_request_at": None, "visits": {"total": 0, "today": 0}}
     active = await db.get(Release, project.active_release_id) if project.active_release_id else None
     latest = (

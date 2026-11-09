@@ -771,7 +771,7 @@ export function SettingsCard({ project, onChange }: { project: Project; onChange
       <FilePick icon={ImageIcon} label="썸네일 이미지 (전시관 카드에 보여요)" file={thumb?.name} onPress={async () => setThumb((await pick(['image/*']))[0] ?? null)} />
       <FilePick
         icon={BookOpen}
-        label={project.guide_url ? `이용 가이드북 바꾸기 (지금: ${project.guide_name || '올린 파일'})` : '이용 가이드북 (선택, PDF·이미지 20MB)'}
+        label={project.guide_url ? `이용 가이드북 바꾸기 (지금: ${project.guide_name || '올린 파일'})` : '이용 가이드북 (선택, PDF·이미지 50MB)'}
         file={guide?.name}
         onPress={async () => setGuide((await pick(['application/pdf', '.pdf', 'image/*']))[0] ?? null)}
       />

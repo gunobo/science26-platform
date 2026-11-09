@@ -15,7 +15,7 @@ from app.redis_client import redis
 from app.queue import enqueue
 from app.security import client_ip, ip_rate_limit
 from app.services import visits
-from app.services.projects import base_path, guide_url, project_out, thumbnail_url
+from app.services.projects import base_path, guide_file_url, guide_url, project_out, thumbnail_url
 
 router = APIRouter(prefix="/public", tags=["public"])
 log = logging.getLogger(__name__)
@@ -55,28 +55,52 @@ async def public_projects(request: Request, db: AsyncSession = Depends(get_db)):
     nos = [r[0].student_no for r in rows]
     views = await visits.counts(nos)
     hot = await visits.hot_scores(nos)
-    out = []
-    for project, name, finished_at, created_at in rows:
-        card = project_out(project)
-        out.append({
-            "student_no": project.student_no,
-            "slug": project.slug,
-            "name": name,
-            "title": project.title or f"{project.student_no} 프로젝트",
-            "description": project.description,
-            "subject": project.subject,
-            "unit": project.unit,
-            "effect": project.effect,
-            "type": card["type"],
-            "status": card["status"],
-            "thumbnail_url": thumbnail_url(project),
-            "guide_url": guide_url(project),
-            "url": card["url"],
-            "views": views.get(project.student_no, {}).get("total", 0),
-            "hot": hot.get(project.student_no, 0),
-            "updated_at": finished_at or created_at,
-        })
-    return out
+    return [
+        _card(project, name, finished_at or created_at, views.get(project.student_no, {}).get("total", 0), hot.get(project.student_no, 0))
+        for project, name, finished_at, created_at in rows
+    ]
+
+
+def _card(project: Project, name: str, updated_at, views: int, hot: float = 0) -> dict:
+    card = project_out(project)
+    return {
+        "student_no": project.student_no,
+        "slug": project.slug,
+        "name": name,
+        "title": project.title or f"{project.student_no} 프로젝트",
+        "description": project.description,
+        "subject": project.subject,
+        "unit": project.unit,
+        "effect": project.effect,
+        "type": card["type"],
+        "status": card["status"],
+        "thumbnail_url": thumbnail_url(project),
+        "guide_url": guide_url(project),
+        "guide_file_url": guide_file_url(project),
+        "guide_name": project.guide_name,
+        "guide_kind": None if not project.guide_path else "pdf" if project.guide_path.endswith(".pdf") else "image",
+        "url": card["url"],
+        "views": views,
+        "hot": hot,
+        "updated_at": updated_at,
+    }
+
+
+@router.get("/projects/{key}")
+async def public_project(key: str, request: Request, db: AsyncSession = Depends(get_db)):
+    """프로젝트 상세 페이지 (web /project/{링크 이름}). 전시관에서 숨긴 프로젝트도 링크로는 열린다."""
+    await ip_rate_limit(request, "public", limit=1200)
+    row = (await db.execute(
+        select(Project, User.name, Release.finished_at, Release.created_at)
+        .join(User, User.id == Project.owner_id)
+        .join(Release, Release.id == Project.active_release_id)
+        .where(or_(Project.slug == key, Project.student_no == key))
+    )).first()
+    if row is None:
+        raise not_found()
+    project, name, finished_at, created_at = row
+    views = (await visits.counts([project.student_no])).get(project.student_no, {"total": 0, "today": 0})
+    return {**_card(project, name, finished_at or created_at, views["total"]), "views_today": views["today"]}
 
 
 @router.get("/site")
@@ -100,8 +124,31 @@ async def thumbnail(student_no: str, db: AsyncSession = Depends(get_db)):
     })
 
 
+@router.get("/guides/{student_no}/info")
+async def guide_info(student_no: str, request: Request, db: AsyncSession = Depends(get_db)):
+    """PDF 뷰어(web /guide/{학번})가 제목·파일 종류를 보여 줄 때 쓴다."""
+    await ip_rate_limit(request, "public", limit=1200)
+    row = (await db.execute(
+        select(Project, User.name).join(User, User.id == Project.owner_id).where(Project.student_no == student_no)
+    )).first()
+    if row is None or not row[0].guide_path:
+        raise not_found()
+    project, name = row
+    return {
+        "student_no": project.student_no,
+        "slug": project.slug,
+        "name": name,
+        "title": project.title or f"{project.student_no} 프로젝트",
+        "url": project_out(project)["url"],
+        "guide_name": project.guide_name,
+        "kind": "pdf" if project.guide_path.endswith(".pdf") else "image",
+        "file_url": guide_file_url(project),
+    }
+
+
 @router.get("/guides/{student_no}")
-async def guide(student_no: str, download: bool = False, db: AsyncSession = Depends(get_db)):
+async def guide(student_no: str, request: Request, download: bool = False, db: AsyncSession = Depends(get_db)):
+    await ip_rate_limit(request, "public", limit=1200)
     project = (await db.execute(select(Project).where(Project.student_no == student_no))).scalar_one_or_none()
     if project is None or not project.guide_path or not Path(project.guide_path).is_file():
         raise not_found()

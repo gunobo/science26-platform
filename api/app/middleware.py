@@ -23,7 +23,7 @@ AGENT_UPLOAD_PREFIX = "/api/v1/agent/upload/"
 UPLOAD_LIMITS = {
     "/api/v1/projects/me/releases": 210 * 1024 * 1024,
     "/api/v1/projects/me/app": 290 * 1024 * 1024,  # APK 150 + 영상 100 + 스크린샷 25 + 여유
-    "/api/v1/projects/me": 30 * 1024 * 1024,  # 썸네일 5 + 이용 가이드북 20 + 여유
+    "/api/v1/projects/me": 60 * 1024 * 1024,  # 썸네일 5 + 이용 가이드북 50 + 여유
     "/api/v1/admin/users/import": 2 * 1024 * 1024,
 }
 DEFAULT_MAX = 1 * 1024 * 1024
