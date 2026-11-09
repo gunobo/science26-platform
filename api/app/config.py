@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     max_fullstack_bytes: int = 200 * 1024 * 1024
     max_apk_bytes: int = 150 * 1024 * 1024
     max_image_bytes: int = 5 * 1024 * 1024
+    max_guide_bytes: int = 20 * 1024 * 1024
     max_video_bytes: int = 100 * 1024 * 1024
     max_unpacked_bytes: int = 1024 * 1024 * 1024
     max_image_total_bytes: int = 2 * 1024 * 1024 * 1024
@@ -87,6 +88,10 @@ class Settings(BaseSettings):
     @property
     def thumbnails_dir(self) -> Path:
         return self.data_dir / "thumbnails"
+
+    @property
+    def guides_dir(self) -> Path:
+        return self.data_dir / "guides"
 
 
 @lru_cache

@@ -15,7 +15,7 @@ from app.redis_client import redis
 from app.queue import enqueue
 from app.security import client_ip, ip_rate_limit
 from app.services import visits
-from app.services.projects import base_path, project_out, thumbnail_url
+from app.services.projects import base_path, guide_url, project_out, thumbnail_url
 
 router = APIRouter(prefix="/public", tags=["public"])
 log = logging.getLogger(__name__)
@@ -70,6 +70,7 @@ async def public_projects(request: Request, db: AsyncSession = Depends(get_db)):
             "type": card["type"],
             "status": card["status"],
             "thumbnail_url": thumbnail_url(project),
+            "guide_url": guide_url(project),
             "url": card["url"],
             "views": views.get(project.student_no, {}).get("total", 0),
             "hot": hot.get(project.student_no, 0),
@@ -97,6 +98,25 @@ async def thumbnail(student_no: str, db: AsyncSession = Depends(get_db)):
         "X-Content-Type-Options": "nosniff",
         "Content-Security-Policy": "default-src 'none'; sandbox",
     })
+
+
+@router.get("/guides/{student_no}")
+async def guide(student_no: str, download: bool = False, db: AsyncSession = Depends(get_db)):
+    project = (await db.execute(select(Project).where(Project.student_no == student_no))).scalar_one_or_none()
+    if project is None or not project.guide_path or not Path(project.guide_path).is_file():
+        raise not_found()
+    path = Path(project.guide_path)
+    name = project.guide_name or f"{student_no}-guide{path.suffix}"
+    if Path(name).suffix.lower() != path.suffix:
+        name += path.suffix
+    headers = {"Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff"}
+    # 이미지는 썸네일처럼 막아 둔다. PDF 는 sandbox 를 걸면 크롬 PDF 뷰어가 열리지 않아 스크립트만 막는다.
+    headers["Content-Security-Policy"] = "default-src 'none'; sandbox" if path.suffix != ".pdf" else "default-src 'none'; object-src 'self'"
+    return FileResponse(
+        path, filename=name, headers=headers,
+        content_disposition_type="attachment" if download else "inline",
+        media_type="application/pdf" if path.suffix == ".pdf" else None,
+    )
 
 
 def _page(title: str, body: str, refresh: int | None = None, status: int = 200) -> HTMLResponse:

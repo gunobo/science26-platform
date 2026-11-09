@@ -41,6 +41,12 @@ def thumbnail_url(project: Project) -> str | None:
     return f"{get_settings().upload_url}/api/v1/public/thumbnails/{project.student_no}"
 
 
+def guide_url(project: Project) -> str | None:
+    if not project.guide_path:
+        return None
+    return f"{get_settings().upload_url}/api/v1/public/guides/{project.student_no}"
+
+
 def release_out(r: Release | None) -> dict | None:
     if r is None:
         return None
@@ -72,6 +78,8 @@ def project_out(p: Project, active: Release | None = None, latest: Release | Non
         "unit": p.unit,
         "effect": p.effect,
         "thumbnail_url": thumbnail_url(p),
+        "guide_url": guide_url(p),
+        "guide_name": p.guide_name,
         "listed": p.listed,
         "status": p.status.value,
         "url": student_url(p.slug),

@@ -484,8 +484,9 @@ async def _delete_project(student_no: str) -> None:
         if project:
             for r in (await db.execute(select(Release).where(Release.project_id == project.id))).scalars():
                 shutil.rmtree(s.releases_dir / str(r.id), ignore_errors=True)
-            if project.thumbnail_path:
-                Path(project.thumbnail_path).unlink(missing_ok=True)
+            for file in (project.thumbnail_path, project.guide_path):
+                if file:
+                    Path(file).unlink(missing_ok=True)
             await db.delete(project)
             await db.commit()
     await redis.delete(f"stats:{student_no}", f"deployseq:{student_no}")

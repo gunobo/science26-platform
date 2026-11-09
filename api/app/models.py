@@ -97,6 +97,9 @@ class Project(Base):
     unit: Mapped[str] = mapped_column(Text, default="")
     effect: Mapped[str] = mapped_column(Text, default="")
     thumbnail_path: Mapped[str | None] = mapped_column(Text)
+    # 이용 가이드북 (PDF·이미지). guide_name 은 학생이 올린 원래 파일 이름 (내려받을 때 쓴다)
+    guide_path: Mapped[str | None] = mapped_column(Text)
+    guide_name: Mapped[str] = mapped_column(Text, default="")
     # 전시관(공개 목록)에 보일지. 숨겨도 링크로는 열린다.
     listed: Mapped[bool] = mapped_column(Boolean, default=True)
     active_release_id: Mapped[uuid.UUID | None] = mapped_column(

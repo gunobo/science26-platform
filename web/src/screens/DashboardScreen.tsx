@@ -2,7 +2,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Linking, Pressable, ScrollView, Switch, Text, useWindowDimensions, View } from 'react-native';
 import {
-  AndroidLogo, ArrowCounterClockwise, Eye, ArrowUpRight, Browser, ClockCounterClockwise, Copy, DeviceMobile, FileZip, FilmStrip, GearSix,
+  AndroidLogo, ArrowCounterClockwise, Eye, ArrowUpRight, Browser, ClockCounterClockwise, BookOpen, Copy, DeviceMobile, FileZip, FilmStrip, GearSix,
   GithubLogo, Image as ImageIcon, Key, PencilSimple, Play, Plug, Plus, Robot, Warning as WarningIcon, Stack, Stop, Terminal, Trash, UploadSimple,
 } from '@phosphor-icons/react';
 
@@ -708,6 +708,7 @@ function RuntimeCard({ project, onChange }: { project: Project; onChange: () => 
 // ---- 링크 이름·소개 ----
 
 export function SettingsCard({ project, onChange }: { project: Project; onChange: () => void }) {
+  const t = useTheme();
   const [title, setTitle] = useState(project.title);
   const [description, setDescription] = useState(project.description);
   const [subject, setSubject] = useState<Subject | ''>(project.subject);
@@ -715,6 +716,7 @@ export function SettingsCard({ project, onChange }: { project: Project; onChange
   const [effect, setEffect] = useState(project.effect ?? '');
   const [slug, setSlug] = useState(project.slug);
   const [thumb, setThumb] = useState<File | null>(null);
+  const [guide, setGuide] = useState<File | null>(null);
   const [msg, setMsg] = useState<{ text: string; kind: 'ok' | 'error' } | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -729,15 +731,30 @@ export function SettingsCard({ project, onChange }: { project: Project; onChange
     fd.append('effect', effect);
     fd.append('slug', slug.trim().toLowerCase());
     if (thumb) fd.append('thumbnail', thumb);
+    if (guide) fd.append('guide', guide);
     try {
       const res = await api<{ redeploying: boolean }>('/projects/me', { method: 'PATCH', body: fd });
       setMsg({ kind: 'ok', text: res.redeploying ? '저장했어요. 새 주소로 다시 배포하는 중이에요.' : '저장했어요.' });
       setThumb(null);
+      setGuide(null);
       onChange();
     } catch (e: any) {
       setMsg({ kind: 'error', text: e.message });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const removeGuide = async () => {
+    setMsg(null);
+    const fd = new FormData();
+    fd.append('guide_remove', 'true');
+    try {
+      await api('/projects/me', { method: 'PATCH', body: fd });
+      setMsg({ kind: 'ok', text: '이용 가이드북을 지웠어요.' });
+      onChange();
+    } catch (e: any) {
+      setMsg({ kind: 'error', text: e.message });
     }
   };
 
@@ -752,6 +769,22 @@ export function SettingsCard({ project, onChange }: { project: Project; onChange
       <Field label="연관 단원" value={unit} onChangeText={setUnit} placeholder="예: 통합과학 Ⅰ - 물질의 규칙성과 결합" />
       <Field label="과학적 효과" value={effect} onChangeText={setEffect} multiline placeholder="이 프로젝트로 어떤 과학 개념을 배우거나 확인할 수 있는지" />
       <FilePick icon={ImageIcon} label="썸네일 이미지 (전시관 카드에 보여요)" file={thumb?.name} onPress={async () => setThumb((await pick(['image/*']))[0] ?? null)} />
+      <FilePick
+        icon={BookOpen}
+        label={project.guide_url ? `이용 가이드북 바꾸기 (지금: ${project.guide_name || '올린 파일'})` : '이용 가이드북 (선택, PDF·이미지 20MB)'}
+        file={guide?.name}
+        onPress={async () => setGuide((await pick(['application/pdf', '.pdf', 'image/*']))[0] ?? null)}
+      />
+      {project.guide_url && !guide ? (
+        <View style={{ flexDirection: 'row', gap: 16, marginTop: -4, marginBottom: 12 }}>
+          <Pressable onPress={() => Linking.openURL(project.guide_url!)} accessibilityRole="link">
+            <T variant="small" style={{ color: t.accent, fontWeight: '600' }}>올린 가이드북 보기</T>
+          </Pressable>
+          <Pressable onPress={removeGuide} accessibilityRole="button">
+            <T variant="small" style={{ color: t.danger, fontWeight: '600' }}>가이드북 지우기</T>
+          </Pressable>
+        </View>
+      ) : null}
       {msg && <Notice kind={msg.kind} text={msg.text} />}
       <Button label="저장" onPress={save} busy={saving} />
     </Card>

@@ -325,6 +325,29 @@ def check_image(filename: str, size: int, max_bytes: int) -> None:
         raise ValidationError(f"이미지는 각 {max_bytes // 1024 // 1024}MB 이하여야 합니다: {filename}")
 
 
+# 이용 가이드북: PDF 또는 이미지. 확장자만 바꾼 다른 파일이 브라우저에서 열리지 않게 파일 앞부분도 본다.
+GUIDE_MAGIC = {
+    ".pdf": (b"%PDF-",),
+    ".png": (b"\x89PNG\r\n\x1a\n",),
+    ".jpg": (b"\xff\xd8\xff",),
+    ".jpeg": (b"\xff\xd8\xff",),
+    ".gif": (b"GIF87a", b"GIF89a"),
+    ".webp": (b"RIFF",),
+}
+
+
+def check_guide(filename: str, data: bytes, max_bytes: int) -> str:
+    """확장자(.pdf 등)를 돌려준다."""
+    suffix = Path(filename).suffix.lower()
+    if suffix not in GUIDE_MAGIC:
+        raise ValidationError("가이드북은 PDF 또는 이미지(png·jpg·webp·gif) 파일로 올려 주세요")
+    if len(data) > max_bytes:
+        raise ValidationError(f"가이드북은 {max_bytes // 1024 // 1024}MB 이하여야 합니다")
+    if not data.startswith(GUIDE_MAGIC[suffix]) or (suffix == ".webp" and data[8:12] != b"WEBP"):
+        raise ValidationError(f"파일 내용이 {suffix[1:].upper()} 형식이 아니에요. 다른 프로그램에서 {suffix[1:].upper()}(으)로 저장해서 올려 주세요")
+    return suffix
+
+
 GITHUB_RE = re.compile(r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?(\.git)?/?$")
 BRANCH_RE = re.compile(r"^[A-Za-z0-9._/-]{1,100}$")
 

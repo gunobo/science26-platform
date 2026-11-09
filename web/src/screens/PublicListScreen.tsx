@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Image, Linking, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
-import { ArrowUpRight, Browser, DeviceMobile, Eye, Fire, Flask, Info, MagnifyingGlass, Stack, UploadSimple } from '@phosphor-icons/react';
+import { ArrowUpRight, BookOpen, Browser, DeviceMobile, Eye, Fire, Flask, Info, MagnifyingGlass, Stack, UploadSimple } from '@phosphor-icons/react';
 
 import { api, PublicCard, SUBJECTS, subjectLabel, UPLOAD_HOST } from '../api';
 import SiteFooter from '../SiteFooter';
@@ -293,6 +293,20 @@ export function ProjectCard({ p, width, rank }: { p: PublicCard; width: `${numbe
               <T variant="small" numberOfLines={2} style={{ marginTop: 4, paddingHorizontal: 2 }}>
                 <T variant="small" style={{ fontWeight: '600' }}>과학적 효과  </T>{p.effect}
               </T>
+            ) : null}
+            {p.guide_url ? (
+              <Pressable
+                onPress={() => Linking.openURL(p.guide_url!)}
+                accessibilityRole="link"
+                accessibilityLabel={`${p.title} 이용 가이드북 열기`}
+                style={({ hovered }: any) => ({
+                  alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10, marginLeft: 2,
+                  borderWidth: 1, borderColor: hovered ? t.accent : t.border, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 6,
+                })}
+              >
+                <BookOpen size={15} color={t.accent} weight="bold" />
+                <T variant="small" style={{ fontWeight: '700', color: t.accent }}>이용 가이드북</T>
+              </Pressable>
             ) : null}
           </View>
         )}

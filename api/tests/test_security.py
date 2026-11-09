@@ -564,3 +564,20 @@ def test_static_pages_revalidate():
     server, apk = STATIC_NGINX_CONF.split("location ~*")
     assert 'add_header Cache-Control "no-cache" always;' in server
     assert 'add_header Cache-Control "no-cache" always;' in apk  # location 안 add_header 는 바깥 것을 물려받지 않는다
+
+
+def test_guide_file_checked_by_content():
+    """이용 가이드북은 PDF·이미지만, 확장자만 바꾼 파일(예: html → pdf)은 거절한다."""
+    from app.services import validation as v
+
+    mb = 1024 * 1024
+    assert v.check_guide("가이드.PDF", b"%PDF-1.7\n...", 20 * mb) == ".pdf"
+    assert v.check_guide("g.webp", b"RIFF\0\0\0\0WEBPVP8 ", 20 * mb) == ".webp"
+    for name, data in [
+        ("g.pdf", b"<html><script>alert(1)</script>"),
+        ("g.html", b"%PDF-1.7"),
+        ("g.webp", b"RIFF\0\0\0\0AVI "),
+        ("g.pdf", b"%PDF-" + b"0" * (20 * mb)),
+    ]:
+        with pytest.raises(v.ValidationError):
+            v.check_guide(name, data, 20 * mb)

@@ -79,6 +79,9 @@ export type Project = {
   unit: string;
   effect: string;
   thumbnail_url: string | null;
+  // 이용 가이드북 (PDF·이미지). guide_name 은 올린 파일 이름
+  guide_url: string | null;
+  guide_name: string;
   listed: boolean;
   status: ProjectStatus;
   url: string | null;
@@ -98,6 +101,7 @@ export type PublicCard = {
   effect?: string;
   status: ProjectStatus;
   thumbnail_url: string | null;
+  guide_url?: string | null;
   url: string;
   views?: number;
   hot?: number;

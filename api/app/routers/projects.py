@@ -42,7 +42,8 @@ async def my_project(user: User = Depends(mapped_student), db: AsyncSession = De
     deleting = await is_deleting(user.student_no)
     if project is None:
         return {"student_no": user.student_no, "slug": user.student_no, "status": "empty", "type": None, "listed": True, "deleting": deleting,
-                "title": "", "description": "", "subject": "", "unit": "", "effect": "", "thumbnail_url": None, "active_release": None,
+                "title": "", "description": "", "subject": "", "unit": "", "effect": "", "thumbnail_url": None,
+                "guide_url": None, "guide_name": "", "active_release": None,
                 "latest_release": None, "url": None, "last_request_at": None, "visits": {"total": 0, "today": 0}}
     active = await db.get(Release, project.active_release_id) if project.active_release_id else None
     latest = (
@@ -71,6 +72,8 @@ async def update_project(
     slug: str | None = Form(None),
     listed: bool | None = Form(None),
     thumbnail: UploadFile | None = File(None),
+    guide: UploadFile | None = File(None),
+    guide_remove: bool = Form(False),
     user: User = Depends(mapped_student),
     db: AsyncSession = Depends(get_db),
 ):
@@ -121,6 +124,27 @@ async def update_project(
         path.write_bytes(data)
         project.thumbnail_path = str(path)
 
+    guide_changed = None
+    if guide is not None and guide.filename:
+        data = await guide.read(s.max_guide_bytes + 1)
+        try:
+            suffix = v.check_guide(guide.filename, data, s.max_guide_bytes)
+        except v.ValidationError as e:
+            raise upload_invalid(e.message)
+        s.guides_dir.mkdir(parents=True, exist_ok=True)
+        for old in s.guides_dir.glob(f"{user.student_no}.*"):
+            old.unlink()
+        path = s.guides_dir / f"{user.student_no}{suffix}"
+        path.write_bytes(data)
+        project.guide_path = str(path)
+        project.guide_name = Path(guide.filename).name[:120]
+        guide_changed = "이용 가이드북"
+    elif guide_remove and project.guide_path:
+        Path(project.guide_path).unlink(missing_ok=True)
+        project.guide_path = None
+        project.guide_name = ""
+        guide_changed = "이용 가이드북 삭제"
+
     changed = [name for name, on in (
         (f"제목: {before['title'] or '(없음)'} → {project.title}", project.title != before["title"]),
         ("설명", project.description != before["description"]),
@@ -129,6 +153,7 @@ async def update_project(
         ("과학적 효과", project.effect != before["effect"]),
         (f"링크 이름 {before['slug']} → {project.slug}", slug_changed),
         ("썸네일", thumbnail is not None and bool(thumbnail.filename)),
+        (guide_changed or "", guide_changed is not None),
         ("전시관 " + ("공개" if project.listed else "숨김"), listed is not None and listed != before["listed"]),
     ) if on]
     if changed:
