@@ -28,12 +28,6 @@ export default function ProjectDetailScreen({ projectKey }: { projectKey: string
   const [p, setP] = useState<PublicCard | null>(null);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
-  // 썸네일은 원래 비율 그대로 보여 준다 (16:9 화면 캡처를 4:3 으로 자르면 글자가 잘린다). 너무 길쭉하면 0.75~2 사이로.
-  const [ratio, setRatio] = useState(4 / 3);
-  useEffect(() => {
-    if (!p?.thumbnail_url) return;
-    Image.getSize(p.thumbnail_url, (w, h) => h && setRatio(Math.min(Math.max(w / h, 0.75), 2)), () => {});
-  }, [p?.thumbnail_url]);
 
   useEffect(() => {
     api<PublicCard>(`/public/projects/${encodeURIComponent(projectKey)}`)
@@ -100,7 +94,7 @@ export default function ProjectDetailScreen({ projectKey }: { projectKey: string
               <View style={{ flex: wide ? 1 : undefined, minWidth: 0 }}>
                 <Pressable onPress={() => Linking.openURL(p.url)} accessibilityRole="link" accessibilityLabel={`${p.title} 작품 열기`}>
                   {({ hovered }: any) => (
-                    <View style={{ aspectRatio: p.thumbnail_url ? ratio : 4 / 3, borderRadius: radius.card, overflow: 'hidden', backgroundColor: t.surfaceAlt, borderWidth: 1, borderColor: hovered ? t.accent : t.border }}>
+                    <View style={{ aspectRatio: 4 / 3, borderRadius: radius.card, overflow: 'hidden', backgroundColor: t.surfaceAlt, borderWidth: 1, borderColor: hovered ? t.accent : t.border }}>
                       {p.thumbnail_url ? (
                         <Image source={{ uri: p.thumbnail_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" accessibilityLabel={`${p.title} 썸네일`} />
                       ) : (
