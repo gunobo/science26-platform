@@ -675,6 +675,8 @@ async def recover_interrupted() -> None:
 
 async def startup(ctx) -> None:
     logging.basicConfig(level=logging.INFO)
+    # httpx 는 요청 URL 을 통째로 INFO 로 찍는다. 디스코드 웹훅 주소(토큰 포함)가 로그에 남지 않게 경고만.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     ctx["build_sem"] = asyncio.Semaphore(s.concurrent_builds)
     s.releases_dir.mkdir(parents=True, exist_ok=True)
     await recover_interrupted()

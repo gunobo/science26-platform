@@ -61,7 +61,12 @@ export default function DashboardScreen({ onEditInfo }: { onEditInfo: () => void
       <AiHelpCard slug={project.slug} />
       {project.deleting && <Notice kind="info" text="프로젝트를 지우는 중이에요. 끝나면 자동으로 새로 올릴 수 있게 바뀌어요." />}
       {!project.subject && !project.deleting && <SubjectCard onChange={refresh} />}
-      <UploadCard disabled={busy || !project.subject || !!project.deleting} onUploaded={(id) => { setWatching(id); refresh(); }} />
+      <UploadCard
+        // 막힌 이유를 버튼 옆에 그대로 보여 준다 (예전엔 늘 '빌드 중'이라고만 나와서, 과목을 안 고른 학생이 원인을 몰랐다)
+        blocked={project.deleting ? 'deleting' : !project.subject ? 'subject' : busy ? 'building' : null}
+        onSubjectChosen={refresh}
+        onUploaded={(id) => { setWatching(id); refresh(); }}
+      />
       {watching && <BuildLogCard key={watchSeq} releaseId={watching} onDone={refresh} />}
       {project.active_release && <RuntimeCard project={project} onChange={refresh} />}
     </>
@@ -413,7 +418,15 @@ function CopyBox({ text, wrap }: { text: string; wrap?: boolean }) {
 
 // ---- 업로드 ----
 
-function UploadCard({ disabled, onUploaded }: { disabled: boolean; onUploaded: (releaseId: string) => void }) {
+type UploadBlock = 'deleting' | 'subject' | 'building' | null;
+const BLOCK_TEXT: Record<Exclude<UploadBlock, null>, string> = {
+  deleting: '프로젝트를 지우는 중이에요. 끝나면 올릴 수 있어요.',
+  subject: '과목을 먼저 골라야 올릴 수 있어요.',
+  building: '지금 빌드가 진행 중이에요. 끝나면 다시 올릴 수 있어요.',
+};
+
+function UploadCard({ blocked, onSubjectChosen, onUploaded }: { blocked: UploadBlock; onSubjectChosen: () => void; onUploaded: (releaseId: string) => void }) {
+  const disabled = blocked !== null;
   const [type, setType] = useState<ProjectType>('static');
   const [source, setSource] = useState<'file' | 'git'>('file');
   const [file, setFile] = useState<File | null>(null);
@@ -554,9 +567,16 @@ function UploadCard({ disabled, onUploaded }: { disabled: boolean; onUploaded: (
       {warnings.map((w, i) => (
         <Notice key={i} kind="warn" text={`${w.message}${w.paths?.length ? `\n발견된 경로: ${w.paths.join(', ')}` : ''}`} />
       ))}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4 }}>
+      {blocked === 'subject' && (
+        // 위의 과목 카드를 못 보고 지나쳐도 버튼 바로 위에서 고를 수 있게
+        <View style={{ marginTop: 4 }}>
+          <Notice kind="warn" text="과목을 아직 안 골랐어요. 아래에서 고르면 바로 올릴 수 있어요." />
+          <SubjectChooser onChange={onSubjectChosen} />
+        </View>
+      )}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
         <Button label="올리고 배포하기" icon={UploadSimple} onPress={submit} busy={busy} disabled={disabled} />
-        {disabled && <T variant="small">지금 빌드가 진행 중이에요. 끝나면 다시 올릴 수 있어요.</T>}
+        {blocked && <T variant="small" style={blocked === 'subject' ? { fontWeight: '700' } : undefined}>{BLOCK_TEXT[blocked]}</T>}
       </View>
     </Card>
   );
@@ -797,6 +817,16 @@ const SUBJECT_OPTIONS = SUBJECTS.map((s) => ({ ...s, icon: SUBJECT_ICONS[s.value
 
 // 과목을 아직 안 골랐으면 업로드 위에 띄우고, 고를 때까지 업로드를 막는다
 function SubjectCard({ onChange }: { onChange: () => void }) {
+  return (
+    <Card title="과목을 골라 주세요" icon={SUBJECT_ICONS.physics}>
+      <T style={{ marginBottom: 12 }}>내 프로젝트가 어느 과목 주제인지 골라야 올릴 수 있어요. 전시관에서 과목별로 모아 보여 줘요. 나중에 마이페이지에서 바꿀 수 있어요.</T>
+      <SubjectChooser onChange={onChange} />
+    </Card>
+  );
+}
+
+// 과목 고르기 (과목 카드와 업로드 카드에서 같이 쓴다)
+function SubjectChooser({ onChange }: { onChange: () => void }) {
   const [saving, setSaving] = useState<Subject | null>(null);
   const [error, setError] = useState('');
   const choose = async (s: Subject) => {
@@ -814,11 +844,10 @@ function SubjectCard({ onChange }: { onChange: () => void }) {
     }
   };
   return (
-    <Card title="과목을 골라 주세요" icon={SUBJECT_ICONS.physics}>
-      <T style={{ marginBottom: 12 }}>내 프로젝트가 어느 과목 주제인지 골라야 올릴 수 있어요. 전시관에서 과목별로 모아 보여 줘요. 나중에 마이페이지에서 바꿀 수 있어요.</T>
+    <>
       <Segmented value={saving ?? ('' as Subject | '')} options={SUBJECT_OPTIONS} onChange={(v) => v && choose(v)} />
       {error ? <Notice kind="error" text={error} /> : null}
-    </Card>
+    </>
   );
 }
 
