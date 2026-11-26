@@ -2,7 +2,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Linking, Pressable, Switch, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import {
-  ArrowClockwise, ArrowCounterClockwise, ArrowsClockwise, Bell, BookOpen, DownloadSimple, Notebook, CaretLeft, CaretRight, ClipboardText, Copy, MicrosoftExcelLogo, Student, UserPlus, FileCsv, Key, MagnifyingGlass, NotePencil, PencilSimple, Play, SignIn,
+  ArrowClockwise, ArrowCounterClockwise, ArrowsClockwise, Bell, BookOpen, CheckSquare, DownloadSimple, EnvelopeSimple, PaperPlaneTilt, Square, Notebook, CaretLeft, CaretRight, ClipboardText, Copy, MicrosoftExcelLogo, Student, UserPlus, FileCsv, Key, MagnifyingGlass, NotePencil, PencilSimple, Play, SignIn,
   Sliders, Sparkle, Stop, Trash, UploadSimple, UsersThree,
 } from '@phosphor-icons/react';
 
@@ -28,6 +28,7 @@ export default function AdminScreen() {
       <StudentsCard />
       <ProjectsCard />
       <ProjectContentCard />
+      <MailCard />
       <ActivityCard />
       <View style={{ flexDirection: wide ? 'row' : 'column', gap: wide ? 20 : 0, alignItems: 'flex-start' }}>
         <View style={{ flex: 1, minWidth: 0, width: wide ? undefined : '100%' }}>
@@ -660,6 +661,266 @@ function ProjectContentCard() {
   );
 }
 
+// ---- 안내 메일: 썸네일·작품 이름을 아직 안 바꾼 학생 중 고른 학생에게만 보낸다 ----
+
+type MailFilter = 'any' | 'thumb' | 'title' | 'all';
+type MailBatch = { total: number; sent: string[]; failed: { student_no: string; name: string; error: string }[]; done?: boolean };
+
+// api/app/routers/admin.py missing_items 와 같은 기준
+const missingOf = (p: AdminProject) => {
+  const out: string[] = [];
+  if (!p.thumbnail_url) out.push('썸네일');
+  const title = p.title.trim();
+  if (!title || title === p.slug || title === p.student_no) out.push('작품(게임) 이름');
+  return out;
+};
+
+const DEFAULT_SUBJECT = '[science26] {이름} 학생, 작품 {빠진항목}을(를) 바꿔 주세요';
+const DEFAULT_BODY = `{이름} 학생 안녕하세요.
+
+전시관에 올라간 작품 '{제목}'의 {빠진항목}이(가) 아직 기본값 그대로예요.
+전시관에서 작품이 잘 보이도록 마이페이지에서 바꿔 주세요.
+
+- 마이페이지: {마이페이지}
+- 내 작품: {주소}
+
+science26 운영진 드림`;
+
+function MailCard() {
+  const t = useTheme();
+  const [rows, setRows] = useState<AdminProject[] | null>(null);
+  const [status, setStatus] = useState<{ configured: boolean; from: string; reply_to: string } | null>(null);
+  const [error, setError] = useState('');
+  const [filter, setFilter] = useState<MailFilter>('any');
+  const [query, setQuery] = useState('');
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [subject, setSubject] = useState(DEFAULT_SUBJECT);
+  const [body, setBody] = useState(DEFAULT_BODY);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [batchId, setBatchId] = useState<string | null>(null);
+  const [batch, setBatch] = useState<MailBatch | null>(null);
+  const [skipped, setSkipped] = useState<string[]>([]);
+  const [copied, setCopied] = useState(false);
+
+  const load = useCallback(() => {
+    api<AdminProject[]>('/admin/projects').then((r) => { setRows(r); setError(''); }).catch((e) => setError(e.message));
+    api<{ configured: boolean; from: string; reply_to: string }>('/admin/mail/status').then(setStatus).catch(() => {});
+  }, []);
+  useEffect(load, [load]);
+
+  const live = useMemo(() => rows?.filter((p) => !p.deleting && p.status !== 'empty') ?? [], [rows]);
+  const counts = useMemo(() => ({
+    any: live.filter((p) => missingOf(p).length).length,
+    thumb: live.filter((p) => !p.thumbnail_url).length,
+    title: live.filter((p) => missingOf(p).includes('작품(게임) 이름')).length,
+    all: live.length,
+  }), [live]);
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return live.filter((p) => {
+      const m = missingOf(p);
+      if (filter === 'any' && !m.length) return false;
+      if (filter === 'thumb' && !m.includes('썸네일')) return false;
+      if (filter === 'title' && !m.includes('작품(게임) 이름')) return false;
+      return !q || [p.student_no, p.owner.name, p.owner.email, p.title, p.slug].some((v) => v?.toLowerCase().includes(q));
+    });
+  }, [live, filter, query]);
+
+  const toggle = (no: string) => setPicked((s) => { const n = new Set(s); n.has(no) ? n.delete(no) : n.add(no); return n; });
+  const allShownPicked = shown.length > 0 && shown.every((p) => picked.has(p.student_no));
+  const toggleAllShown = () => setPicked((s) => {
+    const n = new Set(s);
+    shown.forEach((p) => (allShownPicked ? n.delete(p.student_no) : n.add(p.student_no)));
+    return n;
+  });
+  const pickedRows = live.filter((p) => picked.has(p.student_no));
+
+  // 확인 창 미리보기: 고른 첫 학생 기준으로 {이름} 등을 채워 보여 준다
+  const preview = (tpl: string, p?: AdminProject) => {
+    if (!p) return tpl;
+    const v: Record<string, string> = {
+      이름: p.owner.name || p.student_no, 학번: p.student_no, 빠진항목: missingOf(p).join(', '),
+      제목: p.title || p.slug, 주소: p.url ?? '', 마이페이지: `${window.location.origin}`,
+    };
+    return Object.entries(v).reduce((acc, [k, val]) => acc.split(`{${k}}`).join(val), tpl);
+  };
+
+  const send = async () => {
+    setSending(true);
+    setError('');
+    try {
+      const r = await api<{ batch_id: string; total: number; skipped: string[] }>('/admin/mail/send', {
+        method: 'POST', ...json({ student_nos: [...picked], subject, body }),
+      });
+      setSkipped(r.skipped);
+      setBatch({ total: r.total, sent: [], failed: [] });
+      setBatchId(r.batch_id);
+      setConfirmOpen(false);
+      setPicked(new Set());
+    } catch (e: any) {
+      setError(e.message);
+      setConfirmOpen(false);
+    } finally {
+      setSending(false);
+    }
+  };
+  useEffect(() => {
+    if (!batchId) return;
+    const id = setInterval(() => {
+      api<MailBatch>(`/admin/mail/batches/${batchId}`).then((b) => {
+        setBatch(b);
+        if (b.done) { clearInterval(id); setBatchId(null); }
+      }).catch(() => {});
+    }, 1500);
+    return () => clearInterval(id);
+  }, [batchId]);
+
+  // 엑셀·CSV 명단(첫 칸이 학번)을 올리면 그 학번을 모두 고른다. 프로젝트가 없는 학번도 고를 수 있다
+  const [csvMsg, setCsvMsg] = useState('');
+  const pickFromCsv = async () => {
+    const res = await DocumentPicker.getDocumentAsync({ type: ['text/csv', '.csv'], copyToCacheDirectory: false });
+    const file = !res.canceled && res.assets[0]?.file;
+    if (!file) return;
+    const nos = [...new Set((await file.text()).split(/\r?\n/).map((l) => l.replace(/^\uFEFF/, '').split(',')[0].trim().replace(/^"|"$/g, '')).filter((v) => /^\d{4}$/.test(v)))];
+    setPicked((cur) => new Set([...cur, ...nos]));
+    setFilter('all');
+    const noProject = nos.filter((n) => !live.some((p) => p.student_no === n));
+    setCsvMsg(`CSV 에서 ${nos.length}명을 골랐어요` + (noProject.length ? ` (프로젝트 없는 학번 ${noProject.length}명 포함: ${noProject.join(', ')})` : ''));
+  };
+  const pickedExtra = [...picked].filter((n) => !live.some((p) => p.student_no === n)).sort();
+
+  const copyEmails = () => {
+    navigator.clipboard?.writeText(pickedRows.map((p) => p.owner.email).join(', '));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <Card title="안내 메일 보내기" icon={EnvelopeSimple} right={<Button label="새로고침" kind="ghost" small icon={ArrowsClockwise} onPress={load} />}>
+      <T variant="sub" style={{ marginBottom: 14 }}>
+        썸네일이나 작품(게임) 이름을 아직 안 바꾼 학생을 골라 메일을 보내요. 체크한 학생에게만, 한 사람씩 따로 보내서 다른 학생 주소는 보이지 않아요.
+      </T>
+      {status && !status.configured && (
+        <Notice kind="warn" text="메일 서버가 아직 설정되지 않았어요. 서버 .env 에 SMTP_USER·SMTP_PASSWORD(구글 앱 비밀번호)를 넣고 api·worker 를 다시 띄우면 보낼 수 있어요. 그 전에는 '주소 복사'로 직접 보내 주세요." />
+      )}
+      {error ? <Notice kind="error" text={error} /> : null}
+      {batch && (
+        <Notice
+          kind={batch.done ? (batch.failed.length ? 'warn' : 'ok') : 'info'}
+          text={
+            (batch.done ? `${batch.sent.length}명에게 보냈어요` : `보내는 중… ${batch.sent.length + batch.failed.length}/${batch.total}`) +
+            (batch.failed.length ? ` · 실패 ${batch.failed.length}명: ${batch.failed.map((f) => `${f.student_no} ${f.name} (${f.error})`).join(', ')}` : '') +
+            (skipped.length ? ` · 건너뜀 ${skipped.join(', ')}` : '')
+          }
+        />
+      )}
+
+      <Segmented<MailFilter>
+        value={filter}
+        onChange={setFilter}
+        options={[
+          { value: 'any', label: `썸네일·이름 안 바꿈 ${counts.any}` },
+          { value: 'thumb', label: `썸네일 없음 ${counts.thumb}` },
+          { value: 'title', label: `이름 안 바꿈 ${counts.title}` },
+          { value: 'all', label: `전체 ${counts.all}` },
+        ]}
+      />
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: t.borderStrong, borderRadius: radius.control, paddingHorizontal: 12, flex: 1, minWidth: 180, maxWidth: 300 }}>
+          <MagnifyingGlass size={17} color={t.textMuted} />
+          <TextInput value={query} onChangeText={setQuery} placeholder="학번, 이름, 제목" placeholderTextColor={t.textMuted} accessibilityLabel="메일 받을 학생 검색" style={{ flex: 1, fontFamily: font.family, fontSize: 14.5, color: t.text, paddingVertical: 9, outlineStyle: 'none' } as any} />
+        </View>
+        <Button label={allShownPicked ? '보이는 학생 선택 해제' : `보이는 학생 모두 선택 (${shown.length})`} kind="secondary" small icon={allShownPicked ? Square : CheckSquare} disabled={!shown.length} onPress={toggleAllShown} />
+        <Button label="CSV 명단으로 고르기" kind="secondary" small icon={FileCsv} onPress={pickFromCsv} />
+        {picked.size > 0 && <Button label="선택 비우기" kind="ghost" small onPress={() => { setPicked(new Set()); setCsvMsg(''); }} />}
+      </View>
+      {csvMsg ? <Notice kind="info" text={csvMsg} /> : null}
+      {pickedExtra.length > 0 && (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12, alignItems: 'center' }}>
+          <T variant="small" style={{ fontWeight: '700' }}>프로젝트 없이 고른 학번</T>
+          {pickedExtra.map((n) => (
+            <Pressable key={n} onPress={() => toggle(n)} accessibilityRole="button" accessibilityLabel={`${n} 선택 해제`} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, backgroundColor: t.accentSoft }}>
+              <CheckSquare size={14} color={t.accent} weight="fill" />
+              <T variant="small" style={{ color: t.text }}>{n}</T>
+            </Pressable>
+          ))}
+          <T variant="small">{'{빠진항목}'} 에는 '프로젝트' 가 들어가요</T>
+        </View>
+      )}
+
+      {!rows && !error && <Skeleton h={120} />}
+      {rows && shown.length === 0 && <T variant="sub" style={{ marginBottom: 12 }}>{filter === 'any' ? '모두 썸네일과 이름을 바꿨어요.' : '해당하는 프로젝트가 없어요.'}</T>}
+      <View style={{ gap: 6, marginBottom: 16 }}>
+        {shown.map((p) => {
+          const on = picked.has(p.student_no);
+          const m = missingOf(p);
+          return (
+            <Pressable
+              key={p.student_no}
+              onPress={() => toggle(p.student_no)}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: on }}
+              accessibilityLabel={`${p.student_no} ${p.owner.name} 메일 받을 학생으로 선택`}
+              style={({ hovered }: any) => ({
+                flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: 10, borderRadius: radius.control,
+                backgroundColor: on ? t.accentSoft : hovered ? t.surfaceAlt : 'transparent', borderWidth: 1, borderColor: on ? t.accent : t.border,
+              })}
+            >
+              {on ? <CheckSquare size={20} color={t.accent} weight="fill" /> : <Square size={20} color={t.textMuted} />}
+              <T variant="heading" style={{ fontSize: 14.5, width: 44 }}>{p.student_no}</T>
+              <T style={{ color: t.text, width: 72 }} numberOfLines={1}>{p.owner.name || '-'}</T>
+              <T variant="sub" style={{ flex: 1, minWidth: 140 }} numberOfLines={1}>{p.title || `/${p.slug}`}</T>
+              {m.map((x) => <T key={x} variant="small" style={{ color: t.warn, fontWeight: '700' }}>{x === '썸네일' ? '썸네일 없음' : '이름 기본값'}</T>)}
+              <T variant="small" style={{ fontFamily: font.mono }} numberOfLines={1}>{p.owner.email}</T>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <Field label="메일 제목" value={subject} onChangeText={setSubject} maxLength={200} />
+      <Field
+        label="메일 내용"
+        value={body}
+        onChangeText={setBody}
+        multiline
+        maxLength={5000}
+        style={{ minHeight: 200 }}
+        hint="{이름} {학번} {빠진항목} {제목} {주소} {마이페이지} 는 학생마다 바뀌어 들어가요. 답장은 지금 로그인한 관리자 주소로 와요."
+      />
+      <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        <Button
+          label={picked.size ? `${picked.size}명에게 보내기` : '받을 학생을 골라 주세요'}
+          icon={PaperPlaneTilt}
+          disabled={!picked.size || !status?.configured || !!batchId || !subject.trim() || !body.trim()}
+          onPress={() => setConfirmOpen(true)}
+        />
+        <Button label={copied ? '복사됨' : '고른 학생 주소 복사'} kind="secondary" small icon={Copy} disabled={!picked.size} onPress={copyEmails} />
+        <Button label="기본 문구로" kind="ghost" small onPress={() => { setSubject(DEFAULT_SUBJECT); setBody(DEFAULT_BODY); }} />
+      </View>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title={`${picked.size}명에게 메일을 보낼까요?`}
+        confirmLabel="보내기"
+        busy={sending}
+        onConfirm={send}
+        onCancel={() => setConfirmOpen(false)}
+      >
+        <T variant="sub">보낸 메일은 되돌릴 수 없어요. {status?.from ? `보내는 주소: ${status.from}` : ''}</T>
+        <T variant="small" numberOfLines={3}>받는 학생: {[...pickedRows.map((p) => `${p.student_no} ${p.owner.name}`), ...pickedExtra.map((n) => `${n} (프로젝트 없음)`)].join(', ')}</T>
+        {pickedRows[0] && (
+          <View style={{ backgroundColor: t.surfaceAlt, borderRadius: radius.control, padding: 12, gap: 6 }}>
+            <T variant="small" style={{ fontWeight: '700' }}>미리보기 ({pickedRows[0].student_no} {pickedRows[0].owner.name})</T>
+            <T style={{ color: t.text, fontWeight: '700' }}>{preview(subject, pickedRows[0])}</T>
+            <T variant="sub" numberOfLines={12}>{preview(body, pickedRows[0])}</T>
+          </View>
+        )}
+      </ConfirmDialog>
+    </Card>
+  );
+}
+
 function AddStudentCard() {
   const t = useTheme();
   const [email, setEmail] = useState('');
@@ -844,6 +1105,7 @@ const ACTIONS: Record<string, { label: string; kind: Exclude<Kind, 'all'>; icon:
   add_test_user: { label: '테스트 계정 추가', kind: 'admin', icon: UserPlus },
   delete_test_user: { label: '테스트 계정 삭제', kind: 'admin', icon: Trash },
   delete_user: { label: '학생 계정 삭제', kind: 'admin', icon: Trash },
+  mail: { label: '안내 메일 보내기', kind: 'admin', icon: EnvelopeSimple },
   token_create: { label: 'AI 연결 토큰 만들기', kind: 'project', icon: Key },
   token_revoke: { label: 'AI 연결 토큰 지우기', kind: 'project', icon: Key },
   token_leaked: { label: '토큰 유출 감지·자동 폐기', kind: 'project', icon: Key },

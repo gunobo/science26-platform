@@ -3,6 +3,7 @@ import io
 import json
 import re
 import shutil
+import uuid
 from datetime import datetime
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
@@ -14,7 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import settings_store
+from app import mailer, settings_store
 from app.config import get_settings
 from app.db import get_db
 from app.errors import APIError, not_found, upload_invalid
@@ -367,11 +368,105 @@ async def put_settings(
     return cfg
 
 
+# ---- 안내 메일: 썸네일·제목을 아직 안 바꾼 학생 등, 관리자가 고른 학생에게만 보낸다 ----
+
+def missing_items(project: Project) -> list[str]:
+    """전시관에 보이는 정보 중 학생이 아직 안 채운 것. 제목이 비었거나 링크 이름(기본값 학번) 그대로면 안 바꾼 것으로 본다."""
+    out = []
+    if not project.thumbnail_path:
+        out.append("썸네일")
+    title = project.title.strip()
+    if not title or title in (project.slug, project.student_no):
+        out.append("작품(게임) 이름")
+    return out
+
+
+@router.get("/mail/status")
+async def mail_status(admin: User = Depends(admin_user)):
+    return {"configured": mailer.configured(), "from": mailer.sender(), "reply_to": admin.email}
+
+
+class MailIn(BaseModel):
+    student_nos: list[str]
+    subject: str
+    body: str
+
+
+MAIL_VARS = ("이름", "학번", "빠진항목", "제목", "주소", "마이페이지")
+
+
+def _render(template: str, values: dict[str, str]) -> str:
+    # str.format 은 {0.__class__} 같은 걸 해석하므로 정해진 이름만 바꾼다
+    for k in MAIL_VARS:
+        template = template.replace("{" + k + "}", values.get(k, ""))
+    return template
+
+
+@router.post("/mail/send", status_code=202)
+async def mail_send(body: MailIn, admin: User = Depends(admin_user), db: AsyncSession = Depends(get_db)):
+    if not mailer.configured():
+        raise APIError(400, "MAIL_NOT_CONFIGURED", "메일 서버가 설정돼 있지 않아요. 서버 .env 에 SMTP_USER·SMTP_PASSWORD 를 넣어 주세요")
+    subject, text = body.subject.strip(), body.body.strip()
+    if not subject or not text:
+        raise upload_invalid("제목과 내용을 적어 주세요")
+    if len(subject) > 200 or len(text) > 5000:
+        raise upload_invalid("제목은 200자, 내용은 5000자까지 쓸 수 있어요")
+    nos = sorted(set(body.student_nos))
+    if not nos:
+        raise upload_invalid("받을 학생을 골라 주세요")
+    if len(nos) > 300:
+        raise upload_invalid("한 번에 300명까지 보낼 수 있어요")
+    # 같은 메일을 두 번 누르는 것 방지
+    if not await redis.set(f"mail-send:{admin.id}", "1", nx=True, ex=15):
+        raise APIError(409, "ACTION_IN_PROGRESS", "방금 보냈어요. 잠시 후 다시 시도하세요")
+
+    rows = await db.execute(
+        select(User, Project).outerjoin(Project, Project.owner_id == User.id).where(User.student_no.in_(nos))
+    )
+    s = get_settings()
+    messages, skipped = [], []
+    for user, project in rows:
+        if user.email.endswith("@science26.local"):
+            skipped.append(user.student_no)  # 자동 점검 계정
+            continue
+        values = {
+            "이름": user.name or user.student_no, "학번": user.student_no,
+            "빠진항목": ", ".join(missing_items(project)) if project else "프로젝트",
+            "제목": (project.title or project.slug) if project else "",
+            "주소": student_url(project.slug) if project and project.active_release_id else "",
+            "마이페이지": s.upload_url,
+        }
+        messages.append({
+            "student_no": user.student_no, "name": user.name, "to": user.email,
+            "subject": _render(subject, values)[:200], "body": _render(text, values),
+        })
+    skipped += [n for n in nos if n not in {m["student_no"] for m in messages} and n not in skipped]
+    if not messages:
+        raise upload_invalid("보낼 수 있는 학생이 없어요")
+
+    batch_id = uuid.uuid4().hex
+    await mailer.save_batch(batch_id, {"total": len(messages), "sent": [], "failed": [], "done": False})
+    await enqueue("send_admin_mail", batch_id, messages, admin.email)
+    audit(db, admin, "mail", f"{len(messages)}명 | {subject[:80]}")
+    await db.commit()
+    return {"batch_id": batch_id, "total": len(messages), "skipped": skipped}
+
+
+@router.get("/mail/batches/{batch_id}")
+async def mail_batch(batch_id: str, _: User = Depends(admin_user)):
+    if not re.fullmatch(r"[0-9a-f]{32}", batch_id):
+        raise not_found()
+    state = await mailer.load_batch(batch_id)
+    if state is None:
+        raise not_found()
+    return state
+
+
 # 관리자 화면 '최근 활동' 필터 → action 묶음
 ACTIVITY_KINDS = {
     "login": ["first_login"],
     "project": ["register", "upload", "update_info", "rollback", "slug", "env", "stop", "start", "self_delete", "token_create", "token_revoke", "token_leaked"],
-    "admin": ["admin_stop", "delete", "import_users", "settings", "redeploy_all", "add_user", "add_test_user", "delete_test_user", "delete_user"],
+    "admin": ["admin_stop", "delete", "import_users", "settings", "redeploy_all", "add_user", "add_test_user", "delete_test_user", "delete_user", "mail"],
 }
 TODAY_ACTIONS = ["first_login", "register", "upload", "update_info"]
 KST = ZoneInfo("Asia/Seoul")

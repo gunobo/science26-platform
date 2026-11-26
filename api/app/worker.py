@@ -14,7 +14,7 @@ import yaml
 from arq import cron
 from sqlalchemy import select
 
-from app import settings_store
+from app import mailer, settings_store
 from app.config import get_settings
 from app.db import SessionLocal
 from app.notify import send as send_discord
@@ -52,6 +52,26 @@ async def notify(message: str) -> None:
 async def send_notification(ctx, message: str, mention: bool = False) -> None:
     """API 가 넣는 활동 알림 잡."""
     await send_discord(message, mention=mention)
+
+
+async def send_admin_mail(ctx, batch_id: str, messages: list[dict], reply_to: str = "") -> None:
+    """관리자 안내 메일. messages: [{student_no, name, to, subject, body}]. 한 통씩 보내며 진행 상황을 남긴다."""
+    state = await mailer.load_batch(batch_id) or {"total": len(messages), "sent": [], "failed": []}
+    m = mailer.Mailer()
+    try:
+        for msg in messages:
+            try:
+                await asyncio.to_thread(m.send, msg["to"], msg["subject"], msg["body"], reply_to)
+                state["sent"].append(msg["student_no"])
+            except Exception as e:
+                log.warning("메일 전송 실패 %s: %s", msg["to"], e)
+                state["failed"].append({"student_no": msg["student_no"], "name": msg.get("name", ""), "error": str(e)[:200]})
+            await mailer.save_batch(batch_id, state)
+            await asyncio.sleep(0.5)  # 너무 빨리 보내면 Gmail 이 스팸으로 막는다
+    finally:
+        await asyncio.to_thread(m.close)
+        state["done"] = True
+        await mailer.save_batch(batch_id, state)
 
 
 # ---- 소스 준비 (validating) ----
@@ -697,7 +717,7 @@ async def startup(ctx) -> None:
 class WorkerSettings:
     functions = [
         build_release, deploy_existing, stop_project, start_project, runtime_logs, delete_project, delete_account,
-        send_notification,
+        send_notification, send_admin_mail,
     ]
     cron_jobs = [
         cron(track_requests, second={0, 30}),

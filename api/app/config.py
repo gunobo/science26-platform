@@ -27,6 +27,14 @@ class Settings(BaseSettings):
     # 활동 알림(첫 접속·프로젝트 등록·수정)에서 멘션할 디스코드 사용자 ID, 쉼표로 여러 명
     discord_mention_user_ids: str = ""
 
+    # 관리자 안내 메일 (썸네일·제목 보완 요청 등). Gmail 이면 smtp.gmail.com / 587 / 앱 비밀번호
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""  # 비우면 smtp_user
+    smtp_from_name: str = "science26"
+
     # 학생 스택이 접속하는 공용 인스턴스 (학생 네트워크 안에서의 별칭)
     student_pg_host: str = "postgres"
     student_redis_host: str = "redis"
