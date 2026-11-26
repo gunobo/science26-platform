@@ -1,5 +1,5 @@
 import * as DocumentPicker from 'expo-document-picker';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createElement, useCallback, useEffect, useMemo, useState } from 'react';
 import { Linking, Pressable, Switch, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import {
   ArrowClockwise, ArrowCounterClockwise, ArrowsClockwise, Bell, BookOpen, CheckSquare, DownloadSimple, EnvelopeSimple, PaperPlaneTilt, Square, Notebook, CaretLeft, CaretRight, ClipboardText, Copy, MicrosoftExcelLogo, Student, UserPlus, FileCsv, Key, MagnifyingGlass, NotePencil, PencilSimple, Play, SignIn,
@@ -678,11 +678,8 @@ const missingOf = (p: AdminProject) => {
 const DEFAULT_SUBJECT = '[science26] {이름} 학생, 작품 {빠진항목}을(를) 바꿔 주세요';
 const DEFAULT_BODY = `{이름} 학생 안녕하세요.
 
-전시관에 올라간 작품 '{제목}'의 {빠진항목}이(가) 아직 기본값 그대로예요.
-전시관에서 작품이 잘 보이도록 마이페이지에서 바꿔 주세요.
-
-- 마이페이지: {마이페이지}
-- 내 작품: {주소}
+전시관에 올라간 작품의 {빠진항목}이(가) 아직 기본값 그대로예요.
+전시관에서 작품이 눈에 잘 띄도록 마이페이지에서 바꿔 주세요.
 
 science26 운영진 드림`;
 
@@ -736,14 +733,16 @@ function MailCard() {
   });
   const pickedRows = live.filter((p) => picked.has(p.student_no));
 
-  // 확인 창 미리보기: 고른 첫 학생 기준으로 {이름} 등을 채워 보여 준다
-  const preview = (tpl: string, p?: AdminProject) => {
-    if (!p) return tpl;
-    const v: Record<string, string> = {
-      이름: p.owner.name || p.student_no, 학번: p.student_no, 빠진항목: missingOf(p).join(', '),
-      제목: p.title || p.slug, 주소: p.url ?? '', 마이페이지: `${window.location.origin}`,
-    };
-    return Object.entries(v).reduce((acc, [k, val]) => acc.split(`{${k}}`).join(val), tpl);
+  // 확인 창: 서버가 만든 실제 메일(HTML)을 고른 첫 학생 기준으로 보여 준다
+  const [mailPreview, setMailPreview] = useState<{ student_no: string; name: string; to: string; subject: string; html: string } | null>(null);
+  const [previewError, setPreviewError] = useState('');
+  const openConfirm = () => {
+    setMailPreview(null);
+    setPreviewError('');
+    setConfirmOpen(true);
+    api<NonNullable<typeof mailPreview>>('/admin/mail/preview', { method: 'POST', ...json({ student_nos: [...picked], subject, body }) })
+      .then(setMailPreview)
+      .catch((e) => setPreviewError(e.message));
   };
 
   const send = async () => {
@@ -893,7 +892,7 @@ function MailCard() {
           label={picked.size ? `${picked.size}명에게 보내기` : '받을 학생을 골라 주세요'}
           icon={PaperPlaneTilt}
           disabled={!picked.size || !status?.configured || !!batchId || !subject.trim() || !body.trim()}
-          onPress={() => setConfirmOpen(true)}
+          onPress={openConfirm}
         />
         <Button label={copied ? '복사됨' : '고른 학생 주소 복사'} kind="secondary" small icon={Copy} disabled={!picked.size} onPress={copyEmails} />
         <Button label="기본 문구로" kind="ghost" small onPress={() => { setSubject(DEFAULT_SUBJECT); setBody(DEFAULT_BODY); }} />
@@ -909,11 +908,19 @@ function MailCard() {
       >
         <T variant="sub">보낸 메일은 되돌릴 수 없어요. {status?.from ? `보내는 주소: ${status.from}` : ''}</T>
         <T variant="small" numberOfLines={3}>받는 학생: {[...pickedRows.map((p) => `${p.student_no} ${p.owner.name}`), ...pickedExtra.map((n) => `${n} (프로젝트 없음)`)].join(', ')}</T>
-        {pickedRows[0] && (
-          <View style={{ backgroundColor: t.surfaceAlt, borderRadius: radius.control, padding: 12, gap: 6 }}>
-            <T variant="small" style={{ fontWeight: '700' }}>미리보기 ({pickedRows[0].student_no} {pickedRows[0].owner.name})</T>
-            <T style={{ color: t.text, fontWeight: '700' }}>{preview(subject, pickedRows[0])}</T>
-            <T variant="sub" numberOfLines={12}>{preview(body, pickedRows[0])}</T>
+        {previewError ? <Notice kind="error" text={previewError} /> : null}
+        {!mailPreview && !previewError && <Skeleton h={320} />}
+        {mailPreview && (
+          <View style={{ gap: 6 }}>
+            <T variant="small" style={{ fontWeight: '700' }}>미리보기 · {mailPreview.student_no} {mailPreview.name} ({mailPreview.to})</T>
+            <T style={{ color: t.text, fontWeight: '700' }}>{mailPreview.subject}</T>
+            {/* 메일 HTML 은 관리자 화면 스타일과 섞이지 않게 iframe 안에서, 스크립트 없이 연다 */}
+            {createElement('iframe', {
+              srcDoc: mailPreview.html,
+              sandbox: '',
+              title: '메일 미리보기',
+              style: { width: '100%', height: 420, border: `1px solid ${t.border}`, borderRadius: radius.control, background: '#f3f4f6' },
+            })}
           </View>
         )}
       </ConfirmDialog>

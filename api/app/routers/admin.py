@@ -402,10 +402,7 @@ def _render(template: str, values: dict[str, str]) -> str:
     return template
 
 
-@router.post("/mail/send", status_code=202)
-async def mail_send(body: MailIn, admin: User = Depends(admin_user), db: AsyncSession = Depends(get_db)):
-    if not mailer.configured():
-        raise APIError(400, "MAIL_NOT_CONFIGURED", "메일 서버가 설정돼 있지 않아요. 서버 .env 에 SMTP_USER·SMTP_PASSWORD 를 넣어 주세요")
+def _validate_mail(body: "MailIn") -> tuple[str, str, list[str]]:
     subject, text = body.subject.strip(), body.body.strip()
     if not subject or not text:
         raise upload_invalid("제목과 내용을 적어 주세요")
@@ -416,12 +413,14 @@ async def mail_send(body: MailIn, admin: User = Depends(admin_user), db: AsyncSe
         raise upload_invalid("받을 학생을 골라 주세요")
     if len(nos) > 300:
         raise upload_invalid("한 번에 300명까지 보낼 수 있어요")
-    # 같은 메일을 두 번 누르는 것 방지
-    if not await redis.set(f"mail-send:{admin.id}", "1", nx=True, ex=15):
-        raise APIError(409, "ACTION_IN_PROGRESS", "방금 보냈어요. 잠시 후 다시 시도하세요")
+    return subject, text, nos
 
+
+async def _build_messages(db: AsyncSession, nos: list[str], subject: str, text: str) -> tuple[list[dict], list[str]]:
+    """받는 학생마다 제목·글자 본문·HTML 본문을 채운다."""
     rows = await db.execute(
         select(User, Project).outerjoin(Project, Project.owner_id == User.id).where(User.student_no.in_(nos))
+        .order_by(User.student_no)
     )
     s = get_settings()
     messages, skipped = [], []
@@ -429,18 +428,52 @@ async def mail_send(body: MailIn, admin: User = Depends(admin_user), db: AsyncSe
         if user.email.endswith("@science26.local"):
             skipped.append(user.student_no)  # 자동 점검 계정
             continue
+        missing = missing_items(project) if project else ["프로젝트"]
+        url = student_url(project.slug) if project and project.active_release_id else ""
         values = {
             "이름": user.name or user.student_no, "학번": user.student_no,
-            "빠진항목": ", ".join(missing_items(project)) if project else "프로젝트",
+            "빠진항목": ", ".join(missing),
             "제목": (project.title or project.slug) if project else "",
-            "주소": student_url(project.slug) if project and project.active_release_id else "",
-            "마이페이지": s.upload_url,
+            "주소": url, "마이페이지": s.upload_url,
         }
+        body = _render(text, values)
         messages.append({
             "student_no": user.student_no, "name": user.name, "to": user.email,
-            "subject": _render(subject, values)[:200], "body": _render(text, values),
+            "subject": _render(subject, values)[:200],
+            # 글자 메일만 보이는 메일 앱을 위해 마이페이지 주소를 끝에 붙인다
+            "body": body + ("" if s.upload_url in body else f"\n\n마이페이지: {s.upload_url}"),
+            "html": mailer.render_html(
+                body, missing=missing, button_url=s.upload_url,
+                button_label="프로젝트 올리러 가기" if not project else "마이페이지에서 바꾸기",
+                project_title=values["제목"], project_url=url,
+            ),
         })
-    skipped += [n for n in nos if n not in {m["student_no"] for m in messages} and n not in skipped]
+    found = {m["student_no"] for m in messages} | set(skipped)
+    skipped += [n for n in nos if n not in found]
+    return messages, skipped
+
+
+@router.post("/mail/preview")
+async def mail_preview(body: MailIn, _: User = Depends(admin_user), db: AsyncSession = Depends(get_db)):
+    """보내기 전 확인 창용: 고른 첫 학생 기준으로 실제 메일(HTML)을 만들어 돌려준다. 보내지는 않는다."""
+    subject, text, nos = _validate_mail(body)
+    messages, _skipped = await _build_messages(db, nos, subject, text)
+    if not messages:
+        raise upload_invalid("미리 볼 학생이 없어요")
+    m = messages[0]
+    return {"student_no": m["student_no"], "name": m["name"], "to": m["to"], "subject": m["subject"], "html": m["html"]}
+
+
+@router.post("/mail/send", status_code=202)
+async def mail_send(body: MailIn, admin: User = Depends(admin_user), db: AsyncSession = Depends(get_db)):
+    if not mailer.configured():
+        raise APIError(400, "MAIL_NOT_CONFIGURED", "메일 서버가 설정돼 있지 않아요. 서버 .env 에 SMTP_USER·SMTP_PASSWORD 를 넣어 주세요")
+    subject, text, nos = _validate_mail(body)
+    # 같은 메일을 두 번 누르는 것 방지
+    if not await redis.set(f"mail-send:{admin.id}", "1", nx=True, ex=15):
+        raise APIError(409, "ACTION_IN_PROGRESS", "방금 보냈어요. 잠시 후 다시 시도하세요")
+
+    messages, skipped = await _build_messages(db, nos, subject, text)
     if not messages:
         raise upload_invalid("보낼 수 있는 학생이 없어요")
 

@@ -61,7 +61,7 @@ async def send_admin_mail(ctx, batch_id: str, messages: list[dict], reply_to: st
     try:
         for msg in messages:
             try:
-                await asyncio.to_thread(m.send, msg["to"], msg["subject"], msg["body"], reply_to)
+                await asyncio.to_thread(m.send, msg["to"], msg["subject"], msg["body"], reply_to, msg.get("html", ""))
                 state["sent"].append(msg["student_no"])
             except Exception as e:
                 log.warning("메일 전송 실패 %s: %s", msg["to"], e)
